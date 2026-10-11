@@ -51,40 +51,44 @@ The system integrates:
 
 ## System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   DEFENCE SENTINEL                                      │
-│                                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                  MODULE 1: DEFENCE-SENTINEL C2 SERVER (Port 8080)                 │  │
-│  │                                                                                   │  │
-│  │  ┌───────────────────────────────┐     ┌──────────────────────────────────────┐   │  │
-│  │  │ Recency-Augmented UCB1 Engine │     │ Multi-Sensor Simulation Engine       │   │  │
-│  │  │ Q(b) = μ̂_b + c·√(lnN/N_b)     │     │ - 7 Canonical Entities               │   │  │
-│  │  │        + λ·tanh(Δt_b/τ)       │     │ - 25 Hz Physics Tick & Kinematics    │   │  │
-│  │  └──────────────┬────────────────┘     │ - 4 Cameras (CAM-01 to CAM-04)       │   │  │
-│  │                 │                      │ - Incident Response & Alert Engine   │   │  │
-│  │                 ▼                      └──────────────────┬───────────────────┘   │  │
-│  │  ┌───────────────────────────────┐                        │                       │  │
-│  │  │ 5-Scenario Benchmark Runner   │                        ▼                       │  │
-│  │  │ Deterministic Mulberry32 PRNG │     ┌──────────────────────────────────────┐   │  │
-│  │  └───────────────────────────────┘     │ WebSocket C2 Server (/ws/c2)         │   │  │
-│  │                                        │ Broadcasts 20 Hz C2_FRAME telemetry  │   │  │
-│  │                                        └──────────┬────────────────┬──────────┘   │  │
-│  └───────────────────────────────────────────────────┼────────────────┼──────────────┘  │
-│                                                      │                │                 │
-│                                  WebSocket Stream    │                │                 │
-│                                                      ▼                ▼                 │
-│  ┌───────────────────────────────────────────────────────┐  ┌────────────────────────┐  │
-│  │ C2 Tactical Command Dashboard (http://localhost:8080) │  │ React Radar Scanner    │  │
-│  │ Single Page Application with 7 integrated views:      │  │ (http://localhost:5173)│  │
-│  │ 1. Tactical Context        5. Adaptive Scheduler      │  │ React 18 + TypeScript  │  │
-│  │ 2. RF / ESM Spectrum       6. Analytics & Benchmark   │  │ Vite + Tailwind CSS    │  │
-│  │ 3. Optical Surveillance    7. Simulation Center       │  │ SVG Radar + Alerts     │  │
-│  │ 4. Multi-Sensor Fusion                                │  │ Personnel Database     │  │
-│  └───────────────────────────────────────────────────────┘  └────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
-```
+
+The application is organized around the following logical components.
+
+---
+                  DEFENCE-SENTINEL
+                         |
+          +--------------+--------------+
+          |                             |
+          v                             v
+   Web Dashboard                 Radar Scanner
+   HTML / CSS / JS               React / TypeScript
+          |                             |
+          +--------------+--------------+
+                         |
+                         v
+              Backend Communication
+                  REST / WebSocket
+                         |
+                         v
+               Node.js C2 Backend
+                         |
+          +--------------+--------------+
+          |              |              |
+          v              v              v
+      Radar / RF      Scheduler     Incident Engine
+      Simulation      Engine        & Analytics
+          |              |              |
+          +--------------+--------------+
+                         |
+                         v
+                Simulation State
+                         |
+                         v
+              Optional Hardware Layer
+                         |
+                         v
+                ESP32 / Sensors
+             Only when implemented
 
 ---
 
