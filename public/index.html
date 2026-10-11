@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESM-ASTRA // Adaptive RF/ESM Receiver Scheduler & Situational Platform (SIH26055)</title>
+  <title>Defence-Sentinel</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/tactical.css">
 </head>
 <body>
@@ -13,13 +14,17 @@
        ==================================================================== -->
   <header class="global-navbar">
     <div class="nav-brand">
-      <div class="brand-badge" style="background:var(--radar-cyan); color:#070b0e; font-weight:800;">SIH</div>
+      <div class="brand-badge">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+          <path d="M2 12h20"/>
+        </svg>
+      </div>
       <div class="brand-titles">
         <div class="brand-title">
-          ESM-ASTRA
-          <span class="tag-sim">SIH26055 // ADAPTIVE EW RECEIVER SCHEDULING</span>
+          Defence-Sentinel
         </div>
-        <div class="brand-desc">Smart Scan Strategy for Electronic Warfare (SIH26055) with Multi-Sensor Situational Context</div>
       </div>
     </div>
 
@@ -29,7 +34,7 @@
         <span>TACTICAL CONTEXT</span>
       </button>
       <button class="nav-tab-btn" data-view="rf">
-        <span style="color:var(--radar-cyan);">RF / ESM (SIH CORE)</span>
+        <span style="color:var(--radar-cyan);">RF / ESM</span>
       </button>
       <button class="nav-tab-btn" data-view="camera">
         <span>OPTICAL CONTEXT</span>
@@ -38,7 +43,7 @@
         <span>SENSOR FUSION</span>
       </button>
       <button class="nav-tab-btn" data-view="scheduler">
-        <span style="color:var(--radar-cyan);">ADAPTIVE SCHEDULER (SIH CORE)</span>
+        <span style="color:var(--radar-cyan);">ADAPTIVE SCHEDULER</span>
       </button>
       <button class="nav-tab-btn" data-view="analytics">
         <span>ANALYTICS & BENCHMARK</span>
@@ -168,18 +173,18 @@
     </section>
 
     <!-- ------------------------------------------------------------------
-         PAGE 2: RF / ESM INTELLIGENCE (SIH26055 WORKSPACE)
+         PAGE 2: RF / ESM INTELLIGENCE WORKSPACE
          ------------------------------------------------------------------ -->
     <section id="view-rf" class="view-page">
       <div class="rf-page-layout">
         
-        <!-- SIH CORE: Technical Decision Pipeline Indicator -->
+        <!-- Technical Decision Pipeline Indicator -->
         <div class="sih-core-banner">
           <div class="sih-core-header-row">
             <div class="sih-core-badge-wrap">
-              <span class="sih-tag-core">SIH CORE</span>
+              <span class="sih-tag-core">RF / ESM</span>
               <span class="sih-title-core">ADAPTIVE RECEIVER SCHEDULING</span>
-              <span class="sih-ps-tag">PROBLEM STATEMENT SIH26055</span>
+              <span class="sih-ps-tag">ELECTRONIC WARFARE INTELLIGENCE</span>
             </div>
             <div style="font-family:var(--font-mono); font-size:8.5px; color:var(--text-tertiary);">
               Wide RF Search Space + Limited Instantaneous Bandwidth (50 MHz IBW) = Adaptive Decision Engine Required
@@ -218,10 +223,10 @@
           </div>
         </div>
 
-        <!-- "WHY THIS SOLVES THE PS" Comparative Reference Panel -->
+        <!-- Comparative Reference Panel -->
         <div class="ps-solution-panel">
           <div class="ps-panel-header">
-            <span>WHY THIS ARCHITECTURE SOLVES SIH PROBLEM STATEMENT SIH26055</span>
+            <span>OPERATIONAL ARCHITECTURE // ADAPTIVE EW SCAN ENGINE</span>
             <span style="color:var(--radar-cyan);">SMART SCAN STRATEGY FOR ELECTRONIC WARFARE</span>
           </div>
           <div class="ps-panel-grid">
@@ -238,7 +243,7 @@
             <div class="ps-panel-col">
               <span class="ps-col-label proposed">03. PROPOSED</span>
               <div class="ps-col-desc">Recency-Augmented UCB1 Scheduler. Balances empirical mean reward, exploration uncertainty bonus, and bounded recency aging.</div>
-              <span class="ps-col-sub">SIH26055 Core Algorithm</span>
+              <span class="ps-col-sub">Adaptive Core Algorithm</span>
             </div>
             <div class="ps-panel-col">
               <span class="ps-col-label signal">04. LEARNING SIGNAL</span>
@@ -703,18 +708,18 @@
     </section>
 
     <!-- ------------------------------------------------------------------
-         PAGE 5: ADAPTIVE EW SCAN SCHEDULER (SIH CORE)
+         PAGE 5: ADAPTIVE EW SCAN SCHEDULER
          ------------------------------------------------------------------ -->
     <section id="view-scheduler" class="view-page">
       <div class="scheduler-page-layout">
         
-        <!-- SIH CORE: Technical Decision Pipeline Indicator -->
+        <!-- Technical Decision Pipeline Indicator -->
         <div class="sih-core-banner">
           <div class="sih-core-header-row">
             <div class="sih-core-badge-wrap">
-              <span class="sih-tag-core">SIH CORE</span>
+              <span class="sih-tag-core">ALGORITHM</span>
               <span class="sih-title-core">ADAPTIVE RECEIVER SCHEDULING</span>
-              <span class="sih-ps-tag">PROBLEM STATEMENT SIH26055</span>
+              <span class="sih-ps-tag">CLOSED-LOOP MULTI-ARMED BANDIT</span>
             </div>
             <div style="font-family:var(--font-mono); font-size:8.5px; color:var(--text-tertiary);">
               Wide RF Search Space + Limited Instantaneous Bandwidth (50 MHz IBW) = Adaptive Decision Engine Required
@@ -753,10 +758,10 @@
           </div>
         </div>
 
-        <!-- "WHY THIS SOLVES THE PS" Comparative Reference Panel -->
+        <!-- Comparative Reference Panel -->
         <div class="ps-solution-panel">
           <div class="ps-panel-header">
-            <span>WHY THIS ARCHITECTURE SOLVES SIH PROBLEM STATEMENT SIH26055</span>
+            <span>OPERATIONAL ARCHITECTURE // ADAPTIVE EW SCAN ENGINE</span>
             <span style="color:var(--radar-cyan);">SMART SCAN STRATEGY FOR ELECTRONIC WARFARE</span>
           </div>
           <div class="ps-panel-grid">
@@ -773,7 +778,7 @@
             <div class="ps-panel-col">
               <span class="ps-col-label proposed">03. PROPOSED</span>
               <div class="ps-col-desc">Recency-Augmented UCB1 Scheduler. Balances empirical mean reward, exploration uncertainty bonus, and bounded recency aging.</div>
-              <span class="ps-col-sub">SIH26055 Core Algorithm</span>
+              <span class="ps-col-sub">Adaptive Core Algorithm</span>
             </div>
             <div class="ps-panel-col">
               <span class="ps-col-label signal">04. LEARNING SIGNAL</span>
@@ -788,7 +793,7 @@
           </div>
         </div>
 
-        <!-- Policy Inspector Bar & Ablation Controls (SIH26055 Credibility Pass) -->
+        <!-- Policy Inspector Bar & Ablation Controls -->
         <div class="policy-inspector-bar">
           <div class="pi-left-telemetry">
             <div class="pi-metric-item">
@@ -1544,7 +1549,7 @@
               <span style="color:var(--cam-blue); font-weight:700;" id="subsysOpticalNet">4 / 4 ONLINE</span>
             </div>
             <div class="rf-stat-row">
-              <span style="color:var(--text-secondary);">RF / ESM RECEIVER (SIH26055):</span>
+              <span style="color:var(--text-secondary);">RF / ESM RECEIVER ENGINE:</span>
               <span style="color:var(--state-verified); font-weight:700;" id="subsysRfReceiver">ACTIVE (50 MHz IBW)</span>
             </div>
             <div class="rf-stat-row">

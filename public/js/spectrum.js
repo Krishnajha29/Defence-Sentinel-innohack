@@ -1,5 +1,5 @@
 /**
- * ESM-ASTRA: RF / ESM Intelligence Spectrum Analyzer & Waterfall Spectrogram (SIH26055 Core)
+ * Defence-Sentinel: RF / ESM Intelligence Spectrum Analyzer & Waterfall Spectrogram
  * Single Source of Truth: Synthesizes spectral peaks from master transmitting entities
  * and live backend receiver telemetry (simState.rxTelemetry).
  */

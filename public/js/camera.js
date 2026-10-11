@@ -1,5 +1,5 @@
 /**
- * ESM-ASTRA: Optical Surveillance Monitor (SIH26055 Demonstration Layer)
+ * Defence-Sentinel: Optical Surveillance Monitor
  * Real webcam feed with CV detection overlays + robust procedural tactical IR fallback
  */
 

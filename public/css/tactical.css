@@ -1,4 +1,4 @@
-/* ESM-ASTRA: Multi-Page Tactical Defence Command Platform (SIH26055) */
+/* Defence-Sentinel: Tactical Multi-Domain Command Platform */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {
@@ -512,7 +512,7 @@ body {
 }
 
 /* ==========================================================================
-   PAGE 2: RF / ESM INTELLIGENCE (SIH26055 WORKSPACE)
+   PAGE 2: RF / ESM INTELLIGENCE WORKSPACE
    ========================================================================== */
 .rf-page-layout {
   display: flex;
@@ -1643,7 +1643,7 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 
 /* =========================================================================
-   SIH26055 ALIGNMENT PASS: Core Technical Pipeline & Problem Alignment
+   TECHNICAL PIPELINE: Core Decision Flow & Problem Alignment
    ========================================================================= */
 .sih-core-banner {
   display: flex;
@@ -1918,7 +1918,7 @@ body {
 }
 
 /* ==========================================================================
-   ADAPTIVE SCHEDULER CREDIBILITY PASS COMPONENTS (SIH26055)
+   ADAPTIVE SCHEDULER POLICY INSPECTION COMPONENTS
    Policy Inspector, 10-Attribute Per-Band State, Learning Demo, Decision Trace
    ========================================================================== */
 

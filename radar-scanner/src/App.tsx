@@ -116,9 +116,9 @@ export default function App() {
       <header className="flex items-center justify-between px-4 py-2 border-b border-gray-700/60 bg-gray-950 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400'}`} />
-          <span className="text-sm font-bold tracking-[0.15em] text-cyan-300">RADAR SECURITY SCANNER</span>
+          <span className="text-sm font-bold tracking-[0.15em] text-cyan-300">Defence-Sentinel</span>
           <span className={`text-[8px] border px-2 py-0.5 rounded font-bold ${isConnected ? 'border-emerald-500/50 text-emerald-400 bg-emerald-950/40' : 'border-gray-700 text-gray-500'}`}>
-            {isConnected ? 'C2 BACKEND: CONNECTED [PORT 8080]' : 'OFFLINE FALLBACK'}
+            {isConnected ? 'C2 BACKEND: CONNECTED [PORT 8080]' : 'TACTICAL SIMULATION ACTIVE'}
           </span>
         </div>
         <div className="text-[8px] text-red-500/80 font-bold tracking-wide text-center flex-1 mx-4">

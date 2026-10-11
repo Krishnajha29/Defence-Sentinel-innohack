@@ -1,5 +1,5 @@
 /**
- * ESM-ASTRA: Adaptive RF/ESM Receiver Scheduler & Situational Platform (SIH26055)
+ * Defence-Sentinel: Tactical Command & Situational Platform
  * Single Source of Truth: Synchronizes all 7 workspaces to master simulation entities
  */
 
@@ -430,7 +430,7 @@ class TacticalC2App {
 
 
   /* --------------------------------------------------------------------------
-     4. PAGE 2: RF / ESM INTELLIGENCE RENDERING (SIH26055)
+     4. PAGE 2: RF / ESM INTELLIGENCE RENDERING
      -------------------------------------------------------------------------- */
   renderRfEmitterTable(entities) {
     const tbody = document.getElementById('rfEmitterTableBody');
@@ -1764,7 +1764,7 @@ class TacticalC2App {
       };
     }
 
-    // Policy Ablation Toggles (SIH26055 Core)
+    // Policy Ablation Toggles (Adaptive Scheduler)
     const ablationGroup = document.getElementById('ablationBtnGroup');
     if (ablationGroup) {
       ablationGroup.querySelectorAll('.btn-ablation').forEach(btn => {

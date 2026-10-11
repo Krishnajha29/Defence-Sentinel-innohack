@@ -1,6 +1,5 @@
-# Defence Sentinel — Adaptive RF/ESM Radar Security System
+# Defence-Sentinel — Tactical Multi-Sensor Radar Security System
 
-[![SIH 2026](https://img.shields.io/badge/SIH-2026--SIH26055-blue?style=flat-square)](https://www.sih.gov.in/)
 [![Node.js](https://img.shields.io/badge/Node.js-v24-green?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
@@ -9,8 +8,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 > **SIMULATION / PROTOTYPE — NOT FOR OPERATIONAL DEPLOYMENT**  
-> This system is a research prototype built for Smart India Hackathon 2026 (Problem Statement SIH26055).  
-> It is not connected to real cameras, biometric systems, military networks, or any operational security infrastructure.
+> This system is a situational awareness research prototype.  
+> It is not connected to real cameras, biometric systems, military networks, or operational defense hardware.
 
 ---
 
@@ -20,7 +19,7 @@
 - [System Architecture](#system-architecture)
 - [7-Page Command & Control Suite](#7-page-command--control-suite)
 - [Project Structure](#project-structure)
-- [Module 1 — ESM-ASTRA (Node.js Backend & Dashboard)](#module-1--esm-astra-nodejs-backend--dashboard)
+- [Module 1 — Defence-Sentinel C2 (Node.js Backend & Dashboard)](#module-1--defence-sentinel-c2-nodejs-backend--dashboard)
 - [Module 2 — Radar Scanner (React Frontend)](#module-2--radar-scanner-react-frontend)
 - [Core Algorithm — Recency-Augmented UCB1](#core-algorithm--recency-augmented-ucb1)
 - [Multi-Sensor Fusion & Incident Response](#multi-sensor-fusion--incident-response)
@@ -34,7 +33,7 @@
 
 ## Overview
 
-**Defence Sentinel** is an end-to-end tactical electronic warfare and situational awareness platform built for Smart India Hackathon 2026 (Problem Statement SIH26055: *Adaptive Scan Strategy for Electronic Warfare*).
+**Defence-Sentinel** is an end-to-end tactical situational awareness and electronic warfare surveillance platform.
 
 The system integrates:
 1. **Adaptive RF/ESM Scan Scheduling** — The primary mathematical contribution. A `Recency-Augmented UCB1` multi-armed bandit algorithm dynamically prioritizes RF dwell time across candidate radar bands, balancing exploration of unvisited frequencies with exploitation of bursty, frequency-agile threats.
@@ -57,7 +56,7 @@ The system integrates:
 │                                   DEFENCE SENTINEL                                      │
 │                                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────────────────────┐  │
-│  │                     MODULE 1: ESM-ASTRA SERVER (Port 8080)                         │  │
+│  │                  MODULE 1: DEFENCE-SENTINEL C2 SERVER (Port 8080)                 │  │
 │  │                                                                                   │  │
 │  │  ┌───────────────────────────────┐     ┌──────────────────────────────────────┐   │  │
 │  │  │ Recency-Augmented UCB1 Engine │     │ Multi-Sensor Simulation Engine       │   │  │
@@ -108,7 +107,7 @@ The system integrates:
 ```
 Defence-Sentinel/
 │
-├── defense_radar_system/          # Module 1 — ESM-ASTRA Node.js Backend & Dashboard
+├── defense_radar_system/          # Module 1 — Defence-Sentinel Node.js Backend & Dashboard
 │   ├── server.js                  # Main Express + WebSocket server
 │   ├── package.json
 │   ├── server/
@@ -294,7 +293,7 @@ node test/test_final_presentation_acceptance.js
 
 ## Disclaimer & Team
 
-This project is a **software simulation prototype** developed for the **Smart India Hackathon 2026** under Problem Statement **SIH26055** (*Adaptive Scan Strategy for Electronic Warfare*).
+This project is a **software simulation prototype** developed for the **Defence-Sentinel** multi-domain tactical electronic warfare and situational awareness platform.
 
 - All radar signals, optical feeds, RF spectra, and incidents are synthetic simulations.
 - It is **not connected** to real defense hardware, weapons systems, or operational radar networks.

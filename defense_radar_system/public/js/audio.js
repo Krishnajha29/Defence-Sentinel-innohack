@@ -1,5 +1,5 @@
 /**
- * ESM-ASTRA Audio Synthesizer Engine (SIH26055)
+ * Defence-Sentinel Audio Synthesizer Engine
  * Uses Web Audio API to create authentic tactical radar pings and alert notifications
  */
 

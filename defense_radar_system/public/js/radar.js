@@ -1,12 +1,12 @@
 /**
- * ESM-ASTRA: Hero Tactical 360° PPI Radar (Single Source of Truth)
+ * Defence-Sentinel: Hero Tactical 360° PPI Radar (Single Source of Truth)
  * Entity types: VERIFIED (green ●), ANOMALOUS (red ◆), WILDLIFE (amber ▲), UNIDENTIFIED (grey □)
  */
 
 class TacticalRadarScope {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
-    this.ctx = this.canvas.getContext('2d');
+    this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
 
     this.width = 0;
     this.height = 0;
@@ -16,14 +16,30 @@ class TacticalRadarScope {
 
     this.maxRangeMeters = 850;
     this.sweepAngle = 0;
+    this.lastFrameTime = performance.now();
     this.entities = [];
-    this.baseCamp = null;
+    this.baseCamp = {
+      commandHq: { x: 0, y: 0, width: 46, height: 46, label: 'COMMAND HQ' },
+      armory: { x: 75, y: -45, width: 34, height: 28, label: 'ARMORY' },
+      barracks: { x: -75, y: 40, width: 42, height: 32, label: 'BARRACKS' },
+      vehicleBay: { x: -45, y: -65, width: 38, height: 26, label: 'VEHICLE BAY' },
+      northGate: { x: 0, y: 220, width: 26, height: 12, label: 'NORTH GATE' },
+      eastGate: { x: 260, y: 0, width: 14, height: 26, label: 'EAST GATE' },
+      southGate: { x: 0, y: -300, width: 28, height: 14, label: 'SOUTH GATE' },
+      westGate: { x: -260, y: 0, width: 14, height: 26, label: 'WEST GATE' },
+      perimeterRadiusMeters: 450
+    };
     this.selectedEntityId = 'TRK-021';
     this.hoveredEntity = null;
+    this.isLiveBackend = false;
 
     this.setupEvents();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    if (window.ResizeObserver && this.canvas && this.canvas.parentElement) {
+      this.resizeObserver = new ResizeObserver(() => this.resize());
+      this.resizeObserver.observe(this.canvas.parentElement);
+    }
   }
 
   resize() {
@@ -93,22 +109,40 @@ class TacticalRadarScope {
 
   updateData(data) {
     if (data.simState) {
-      this.sweepAngle = data.simState.radarSweepAngle;
-      this.selectedEntityId = data.simState.selectedEntityId;
+      if (typeof data.simState.radarSweepAngle === 'number') {
+        this.sweepAngle = data.simState.radarSweepAngle;
+      }
+      if (data.simState.selectedEntityId) {
+        this.selectedEntityId = data.simState.selectedEntityId;
+      }
     }
-    if (data.entities) this.entities = data.entities;
-    if (data.baseCamp) this.baseCamp = data.baseCamp;
+    if (data.entities && Array.isArray(data.entities)) {
+      this.entities = data.entities;
+    }
+    if (data.baseCamp) {
+      this.baseCamp = data.baseCamp;
+    }
+    this.isLiveBackend = true;
   }
 
   render() {
+    if (!this.canvas || !this.ctx) return;
     const parent = this.canvas.parentElement;
     if (parent && parent.clientWidth > 0 && parent.clientHeight > 0) {
-      const size = Math.min(parent.clientWidth, parent.clientHeight) - 12;
+      const size = Math.max(Math.min(parent.clientWidth, parent.clientHeight) - 12, 260);
       if (Math.abs(size - this.width) > 2 || this.radius === 0) {
         this.resize();
       }
     }
     if (this.radius === 0) return;
+
+    // Smooth autonomous sweep progression (24 RPM = 144 deg/sec) if standalone or between frames
+    const now = performance.now();
+    const dt = Math.min((now - this.lastFrameTime) / 1000, 0.1);
+    this.lastFrameTime = now;
+    if (!this.isLiveBackend) {
+      this.sweepAngle = (this.sweepAngle + dt * 144) % 360;
+    }
 
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
@@ -289,10 +323,21 @@ class TacticalRadarScope {
     const ctx = this.ctx;
     const now = Date.now();
 
+    if (!this.entities || this.entities.length === 0) {
+      ctx.save();
+      ctx.font = '600 8.5px "JetBrains Mono", monospace';
+      ctx.fillStyle = 'rgba(154, 167, 181, 0.45)';
+      ctx.textAlign = 'center';
+      ctx.fillText('NO TARGETS ACQUIRED // SCANNING AIRSPACE', this.centerX, this.centerY + 45);
+      ctx.restore();
+      return;
+    }
+
     this.entities.forEach(ent => {
-      const pos = this.metersToPixels(ent.radar.x, ent.radar.y);
+      if (!ent || !ent.radar) return;
+      const pos = this.metersToPixels(ent.radar.x || 0, ent.radar.y || 0);
       const isSelected = ent.id === this.selectedEntityId;
-      const cls = ent.fusion.classification;
+      const cls = ent.fusion?.classification || 'UNIDENTIFIED';
       const color = this.getEntityColor(cls);
 
       // ── 1. HISTORY TRAIL ────────────────────────────────────────────────

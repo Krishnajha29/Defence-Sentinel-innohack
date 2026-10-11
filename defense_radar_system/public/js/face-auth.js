@@ -1,5 +1,5 @@
 /**
- * ESM-ASTRA: Multi-Person Face Authentication & Biometric Sentry Subsystem
+ * Defence-Sentinel: Multi-Person Face Authentication & Biometric Sentry Subsystem
  * 
  * Core Features:
  * - Independent multi-face detection, descriptor generation, and identity matching

@@ -1,5 +1,5 @@
 /**
- * ESM-ASTRA: System Analytics & Performance Benchmarking (SIH26055)
+ * Defence-Sentinel: System Analytics & Performance Benchmarking
  * Cumulative Interceptions Over Time Performance Monitor
  * Strictly dark-themed (#0B1117), live telemetry driven, high-precision C2 chart.
  */

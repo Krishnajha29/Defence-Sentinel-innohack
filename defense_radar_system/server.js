@@ -1,7 +1,6 @@
 /**
- * ESM-ASTRA: Unified Tactical Situational Awareness + RF Intelligence Workstation
+ * Defence-Sentinel: Unified Tactical Situational Awareness + RF Intelligence Workstation
  * Single Source of Truth Multi-Sensor Simulation Server
- * SIH Problem Statement SIH26055 (Adaptive Scan Strategy for Electronic Warfare)
  */
 
 const express = require('express');

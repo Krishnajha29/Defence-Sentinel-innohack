@@ -1,7 +1,7 @@
 {
-  "name": "esm-astra-adaptive-scan-scheduler",
+  "name": "defence-sentinel",
   "version": "1.0.0",
-  "description": "Smart Scan Strategy for Electronic Warfare (SIH26055) - Adaptive RF/ESM Receiver Scheduler & Multi-Sensor Situational Platform",
+  "description": "Defence-Sentinel — Tactical Multi-Sensor Radar & Adaptive Electronic Warfare Security System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,14 +13,15 @@
     "ws": "^8.18.0"
   },
   "keywords": [
+    "defence-sentinel",
+    "tactical-radar",
     "electronic-warfare",
     "esm",
     "adaptive-scan-scheduler",
-    "sih26055",
     "reinforcement-learning",
     "ucb1",
     "situational-awareness"
   ],
-  "author": "ESM-ASTRA Team (SIH26055)",
-  "license": "ISC"
+  "author": "Defence-Sentinel Team",
+  "license": "MIT"
 }
