@@ -28,9 +28,13 @@ try {
 
   // Suite M: Phase 3 System Completion Verification
   const { runPhase3Tests } = require('./test_phase3_completion.js');
+  const { runFaceAuthTests } = require('./face_auth_test.js');
+
   runPhase3Tests().then(() => {
+    return runFaceAuthTests();
+  }).then(() => {
     console.log('===========================================================');
-    console.log('  🎉 ALL AUTOMATED TEST SUITES PASSED (13/13 SUITES)');
+    console.log('  🎉 ALL AUTOMATED TEST SUITES PASSED (14/14 SUITES)');
     console.log('  - Suite A (PRNG Determinism): VERIFIED');
     console.log('  - Suite B (UCB Mathematical Correctness): VERIFIED');
     console.log('  - Suite C (Beta Posterior Updates): VERIFIED');
@@ -44,12 +48,14 @@ try {
     console.log('  - Suite K (Robustness Engine & Failure Injection): VERIFIED');
     console.log('  - Suite L (Simulated Security Alert & Incident Engine): VERIFIED');
     console.log('  - Suite M (Phase 3 System Completion & RF Telemetry): VERIFIED');
+    console.log('  - Suite N (Local Face Authentication & Verification): VERIFIED');
     console.log('===========================================================');
     process.exit(0);
   }).catch(err => {
-    console.error('\n❌ SUITE M FAILED:', err);
+    console.error('\n❌ TEST SUITE FAILED:', err);
     process.exit(1);
   });
+
 } catch (err) {
   console.error('\n❌ TEST SUITE FAILED:', err);
   process.exit(1);

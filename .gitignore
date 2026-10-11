@@ -6,3 +6,5 @@ dist/
 .vite/
 __pycache__/
 *.pyc
+private/
+defense_radar_system/private/

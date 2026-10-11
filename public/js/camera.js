@@ -148,13 +148,16 @@ class OpticalSurveillanceMonitor {
       ctx.textAlign = 'center';
       ctx.fillText('● IR THERMAL OPTICAL SENSOR [PROCEDURAL IR ONLINE]', w / 2, 22);
       ctx.restore();
+
+      // Simulated targets rendered only in procedural IR scene, never over live webcam
+      this.drawDetectedEntities(ctx, w, h);
     }
 
     // ── OVERLAYS (always active on both webcam and procedural) ────────────
     this.drawOpticalReticle(ctx, w, h);
-    this.drawDetectedEntities(ctx, w, h);
     this.drawCameraHud(ctx, w, h);
   }
+
 
   drawProceduralCameraScene(ctx, w, h) {
     const horizonY = h * 0.44;
@@ -488,8 +491,10 @@ class OpticalSurveillanceMonitor {
         else if (ent.fusion?.classification === 'ANOMALOUS') color = '#d45858'; // Red
         else if (ent.fusion?.classification === 'WILDLIFE') color = '#d7a84b'; // Amber
 
-        // 1. Render Physical Silhouette Avatar in Perspective Scene
-        this.drawRealisticAvatar(ctx, sceneX, footY, boxH, ent.type, color);
+        // 1. Render Physical Silhouette Avatar in Perspective Scene (VEHICLE / WILDLIFE only; PERSON silhouette removed)
+        if (ent.type !== 'PERSON') {
+          this.drawRealisticAvatar(ctx, sceneX, footY, boxH, ent.type, color);
+        }
 
         // 2. Overlay Computer Vision Bounding Box
         ctx.save();
@@ -566,28 +571,14 @@ class OpticalSurveillanceMonitor {
   }
 
   drawRealisticAvatar(ctx, x, groundY, boxH, type, color) {
+    // Unwanted stick-figure / human silhouette graphic removed per requirement
+    if (type === 'PERSON') return;
+
     ctx.save();
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.85;
 
-    if (type === 'PERSON') {
-      const scale = boxH / 70;
-      // Head with tactical helmet
-      ctx.beginPath();
-      ctx.arc(x, groundY - boxH * 0.88, 5 * scale, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Tactical Torso & Vest
-      ctx.fillRect(x - 4 * scale, groundY - boxH * 0.8, 8 * scale, boxH * 0.44);
-
-      // Arms (Tactical walking stance)
-      ctx.fillRect(x - 6.5 * scale, groundY - boxH * 0.78, 2.5 * scale, boxH * 0.38);
-      ctx.fillRect(x + 4 * scale, groundY - boxH * 0.78, 2.5 * scale, boxH * 0.38);
-
-      // Legs
-      ctx.fillRect(x - 4.5 * scale, groundY - boxH * 0.36, 3.5 * scale, boxH * 0.36);
-      ctx.fillRect(x + 1 * scale, groundY - boxH * 0.36, 3.5 * scale, boxH * 0.36);
-    } else if (type === 'VEHICLE') {
+    if (type === 'VEHICLE') {
       const scale = boxH / 45;
       ctx.fillRect(x - 24 * scale, groundY - 18 * scale, 48 * scale, 14 * scale);
       ctx.fillRect(x - 14 * scale, groundY - 28 * scale, 26 * scale, 10 * scale);

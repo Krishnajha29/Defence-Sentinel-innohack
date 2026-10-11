@@ -7,6 +7,7 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const { Mulberry32PRNG } = require('./server/prng');
 const { AdaptiveScanScheduler, RecencyAugmentedUCB1Scheduler, OpenLoopSequentialScheduler, runHitMissLearningSequence } = require('./server/scheduler_engine');
@@ -21,7 +22,46 @@ const wss = new WebSocketServer({ server, path: '/ws/c2' });
 
 const PORT = process.env.PORT || 8080;
 
-app.use(express.json());
+// Local Face Authentication Configuration & Private Directory Isolation
+const FACE_REF_DIR = path.resolve(process.env.FACE_REFERENCE_DIR || path.join(__dirname, 'private', 'face-reference'));
+if (!fs.existsSync(FACE_REF_DIR)) {
+  try { fs.mkdirSync(FACE_REF_DIR, { recursive: true }); } catch (e) { /* ignore */ }
+}
+
+function getFaceReferenceInfo() {
+  if (!fs.existsSync(FACE_REF_DIR)) {
+    return { exists: false, referenceFilename: null, lastModified: null, sizeBytes: null, filePath: null };
+  }
+  const preferredNames = ['authorized-user.jpg', 'authorized-user.jpeg', 'authorized-user.png', 'reference.jpg', 'reference.png'];
+  for (const name of preferredNames) {
+    const p = path.join(FACE_REF_DIR, name);
+    if (fs.existsSync(p)) {
+      try {
+        const stat = fs.statSync(p);
+        return { exists: true, referenceFilename: name, lastModified: stat.mtime.toISOString(), sizeBytes: stat.size, filePath: p };
+      } catch (err) {}
+    }
+  }
+  try {
+    const files = fs.readdirSync(FACE_REF_DIR);
+    for (const f of files) {
+      if (/\.(jpe?g|png)$/i.test(f)) {
+        const p = path.join(FACE_REF_DIR, f);
+        const stat = fs.statSync(p);
+        return { exists: true, referenceFilename: f, lastModified: stat.mtime.toISOString(), sizeBytes: stat.size, filePath: p };
+      }
+    }
+  } catch (err) {
+    // ignore
+  }
+  return { exists: false, referenceFilename: null, lastModified: null, sizeBytes: null, filePath: null };
+}
+
+app.use(express.json({ limit: '15mb' }));
+// Explicit static routes for models and vendor
+app.use('/models', express.static(path.join(__dirname, 'public', 'models')));
+app.use('/vendor', express.static(path.join(__dirname, 'public', 'vendor')));
+
 // Disable static file caching so browsers always get latest JS/CSS after edits
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,
@@ -32,6 +72,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
     res.setHeader('Expires', '0');
   }
 }));
+
 
 
 // Base Installation Tactical Map Line-Art (Meters from radar center 0,0)
@@ -1621,6 +1662,179 @@ app.get('/api/hardware/status', (req, res) => {
     timestamp: Date.now()
   });
 });
+
+// Local Face Authentication Configuration & Multi-Person Roster Isolation
+const ROSTER_FILE = path.join(FACE_REF_DIR, 'roster.json');
+
+function loadRoster() {
+  if (!fs.existsSync(ROSTER_FILE)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(ROSTER_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRoster(roster) {
+  if (!fs.existsSync(FACE_REF_DIR)) {
+    try { fs.mkdirSync(FACE_REF_DIR, { recursive: true }); } catch (e) {}
+  }
+  fs.writeFileSync(ROSTER_FILE, JSON.stringify(roster, null, 2), 'utf8');
+}
+
+app.get('/api/face-auth/roster', (req, res) => {
+  const roster = loadRoster();
+  res.json({
+    configured: true,
+    count: roster.length,
+    people: roster
+  });
+});
+
+app.get('/api/face-auth/status', (req, res) => {
+  const roster = loadRoster();
+  const refInfo = getFaceReferenceInfo();
+  res.json({
+    configured: true,
+    exists: roster.length > 0 || refInfo.exists,
+    count: roster.length,
+    people: roster.map(p => ({ id: p.id, name: p.name, enrolledAt: p.enrolledAt, filename: p.filename })),
+    referenceFilename: roster.length > 0 ? roster[0].filename : refInfo.referenceFilename,
+    lastModified: roster.length > 0 ? roster[0].enrolledAt : refInfo.lastModified,
+    sizeBytes: roster.length > 0 ? null : refInfo.sizeBytes
+  });
+});
+
+app.get('/api/face-auth/reference', (req, res) => {
+  const roster = loadRoster();
+  if (roster.length > 0 && roster[0].filename) {
+    const p = path.resolve(path.join(FACE_REF_DIR, roster[0].filename));
+    if (p.startsWith(FACE_REF_DIR) && fs.existsSync(p)) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      return res.sendFile(p, { dotfiles: 'deny' });
+    }
+  }
+
+  const refInfo = getFaceReferenceInfo();
+  if (!refInfo.exists || !refInfo.filePath) {
+    return res.status(404).json({ error: 'No authorized reference photo found in private reference directory' });
+  }
+  const resolved = path.resolve(refInfo.filePath);
+  if (!resolved.startsWith(FACE_REF_DIR)) {
+    return res.status(403).json({ error: 'Access denied: reference file is outside authorized directory' });
+  }
+  const ext = path.extname(resolved).toLowerCase();
+  const contentType = (ext === '.png') ? 'image/png' : 'image/jpeg';
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.sendFile(resolved, { dotfiles: 'deny' });
+});
+
+app.get('/api/face-auth/photo/:id', (req, res) => {
+  const { id } = req.params;
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid person ID format' });
+  }
+  const photoPath = path.resolve(path.join(FACE_REF_DIR, `${id}.jpg`));
+  if (!photoPath.startsWith(FACE_REF_DIR) || !fs.existsSync(photoPath)) {
+    return res.status(404).json({ error: 'Photo not found' });
+  }
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.sendFile(photoPath, { dotfiles: 'deny' });
+});
+
+app.post('/api/face-auth/enroll', (req, res) => {
+  try {
+    const { name, imageData, descriptor } = req.body || {};
+    if (!imageData || typeof imageData !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid imageData string' });
+    }
+    const personName = (name && typeof name === 'string' && name.trim()) ? name.trim() : 'Authorized Operator';
+    if (!fs.existsSync(FACE_REF_DIR)) {
+      fs.mkdirSync(FACE_REF_DIR, { recursive: true });
+    }
+    const personId = `person_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const filename = `${personId}.jpg`;
+    const targetFile = path.join(FACE_REF_DIR, filename);
+
+    const matches = imageData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const buffer = matches ? Buffer.from(matches[2], 'base64') : Buffer.from(imageData, 'base64');
+    fs.writeFileSync(targetFile, buffer);
+
+    // Keep authorized-user.jpg synced for single-file legacy readers
+    const legacyFile = path.join(FACE_REF_DIR, 'authorized-user.jpg');
+    fs.writeFileSync(legacyFile, buffer);
+
+    const roster = loadRoster();
+    const newPerson = {
+      id: personId,
+      name: personName,
+      enrolledAt: new Date().toISOString(),
+      filename: filename,
+      descriptor: Array.isArray(descriptor) ? descriptor : null
+    };
+    roster.push(newPerson);
+    saveRoster(roster);
+
+    res.json({
+      success: true,
+      person: newPerson,
+      filename: filename,
+      sizeBytes: buffer.length,
+      lastModified: newPerson.enrolledAt
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/face-auth/person/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return res.status(400).json({ error: 'Invalid person ID format' });
+    }
+    const roster = loadRoster();
+    const idx = roster.findIndex(p => p.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Person not found in enrolled roster' });
+    }
+    const removed = roster.splice(idx, 1)[0];
+    saveRoster(roster);
+
+    // Remove photo from private dir
+    if (removed.filename) {
+      const photoPath = path.resolve(path.join(FACE_REF_DIR, removed.filename));
+      if (photoPath.startsWith(FACE_REF_DIR) && fs.existsSync(photoPath)) {
+        try { fs.unlinkSync(photoPath); } catch (e) {}
+      }
+    }
+
+    // If roster is now empty, clean legacy file too
+    if (roster.length === 0) {
+      const legacyFile = path.join(FACE_REF_DIR, 'authorized-user.jpg');
+      if (fs.existsSync(legacyFile)) {
+        try { fs.unlinkSync(legacyFile); } catch (e) {}
+      }
+    }
+
+    res.json({
+      success: true,
+      removedId: id,
+      remainingCount: roster.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 app.post('/api/demo/start', (req, res) => {
   runExact12StepDemo();

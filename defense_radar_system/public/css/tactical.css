@@ -612,7 +612,7 @@ body {
    ========================================================================== */
 .camera-page-layout {
   display: grid;
-  grid-template-columns: 75% 25%;
+  grid-template-columns: 68% 32%;
   height: 100%;
   width: 100%;
   background: var(--bg-deep);
@@ -668,12 +668,64 @@ body {
   display: block;
 }
 
+#faceAuthOverlayCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
 .cam-side-col {
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
-  overflow: hidden;
+  overflow-y: auto;
 }
+
+.face-auth-card {
+  background: var(--bg-panel-subtle);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.roster-person-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #060b10;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  transition: border-color 0.12s ease;
+}
+
+.roster-person-card:hover {
+  border-color: var(--radar-cyan);
+}
+
+.btn-remove-person {
+  background: rgba(212, 88, 88, 0.15);
+  border: 1px solid var(--state-critical);
+  color: var(--state-critical);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-remove-person:hover {
+  background: var(--state-critical);
+  color: #fff;
+}
+
+
 
 .cam-detection-list {
   flex: 1;

@@ -1,7 +1,6 @@
 # Defence Sentinel — Adaptive RF/ESM Radar Security System
 
 [![SIH 2026](https://img.shields.io/badge/SIH-2026--SIH26055-blue?style=flat-square)](https://www.sih.gov.in/)
-[![Q-Hack India 2026](https://img.shields.io/badge/Q--Hack%20India-2026--Track%20AI%20%26%20Software-purple?style=flat-square)](https://qhackindia.devfolio.co/)
 [![Node.js](https://img.shields.io/badge/Node.js-v24-green?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
@@ -290,63 +289,6 @@ node test/test_final_presentation_acceptance.js
 | `/api/incidents` | `GET` | Active simulated incidents and audit trails |
 | `/api/reset` | `POST` | Reset simulation state and re-seed entities |
 | `/api/scenario/:name` | `POST` | Switch active simulation scenario |
-
----
-
----
-
-## Q-Sentinel: Quantum Optimization Extension (Q-Hack India 2026)
-
-> **Track:** Quantum AI & Software | **Team:** S-Duality (Team Lead: Krishna Jha)  
-> **Subproblem:** Constrained Scanning-Slot Resource Allocation via IBM Qiskit & QAOA
-
-### 1. Overview & Research Question
-While the core surveillance platform utilizes an online **Recency-Augmented UCB1** multi-armed bandit scheduler for real-time dwell control, **Q-Sentinel** investigates whether quantum optimization can solve periodic, constrained resource-allocation planning subproblems:
-
-> *"Can a QAOA-based optimization formulation produce useful scanning-slot allocations under physical resource constraints, and how do those allocations compare with classical scheduling and exact baselines?"*
-
-- **No Quantum Advantage Claim:** For prototype problem sizes ($N = 8$ qubits, 256 state space), classical exact algorithms find the global optimum in under 35 ms. This module serves as an empirical exploration of QUBO mapping feasibility and solution quality in NISQ regimes.
-- **Simulator Execution:** Validated using Qiskit 2.5 `StatevectorSampler`. IBM Quantum hardware execution remains planned for future stages.
-
-### 2. Mathematical QUBO Model
-- **Decision Variables:** $x_{b, t} \in \{0, 1\}$ where $x_{b, t} = 1$ assigns frequency band $b$ to scan slot $t$. Total qubits: $N = B \times T$.
-- **Domain Objective:** Maximize priority-weighted utility minus receiver tuning/energy costs:
-  $$\max_{x} \sum_{b=0}^{B-1} \sum_{t=0}^{T-1} \Big( w_p P_b + w_u U_b + w_a A_b - w_c C_b \Big) x_{b, t}$$
-- **Hard Operational Constraints:**
-  1. *Slot Uniqueness:* At most 1 band per slot $\implies P_{\text{slot}} \sum_t \sum_{b < b'} x_{b, t} x_{b', t}$
-  2. *Total Budget:* Exactly $K$ active allocations $\implies P_{\text{budget}} \left( \sum_{b, t} x_{b, t} - K \right)^2$
-  3. *Dwell Diversity:* Anti-hoarding limit $\implies P_{\text{dwell}} \sum_b \sum_{t < t'} x_{b, t} x_{b, t'}$
-- **Ising Transformation:** Mapped to Pauli-Z spin operators via $x_i = \frac{I - Z_i}{2}$ to form problem Hamiltonian $H_C$.
-
-### 3. Experimental Benchmark Results
-Evaluated on a 4-band, 2-slot tactical scenario ($N=8$ qubits, 256 states, 12 feasible solutions):
-
-| Method / Solver | Best Feasible Allocation | Utility Score | Feasible Rate (%) | Runtime |
-|---|---|---|---|---|
-| **Exact Classical (Brute-Force)** | VHF Tactical + UHF Command | **4.10** | 100.0% (post-check) | 30.29 ms |
-| **Classical Greedy Allocator** | VHF Tactical + UHF Command | **4.10** | 100.0% | 0.15 ms |
-| **Recency-Augmented UCB1** | VHF Tactical + UHF Command | **4.10** | 100.0% | 0.14 ms |
-| **Qiskit QAOA ($p=1$, 1000 shots)** | VHF Tactical + UHF Command | **4.10** | **4.2%** | 2.51 s |
-| **Qiskit QAOA ($p=2$, 1500 shots)** | VHF Tactical + UHF Command | **4.10** | **7.7%** (+83% gain) | 4.04 s |
-
-**Key Findings:**
-1. Both QAOA $p=1$ and $p=2$ locate and sample the global optimum bitstring `01100000` (Utility = 4.10).
-2. Deepening the circuit from $p=1$ to $p=2$ increases valid feasible state sampling by **+83%** (from 4.2% to 7.7%).
-
-### 4. Running the Quantum Extension & Test Suite
-```bash
-# Navigate to the quantum module
-cd quantum-extension
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run automated unit tests (9 tests verifying constraints, baselines, & QAOA)
-python -m unittest discover -s tests -v
-
-# Run the full benchmark suite
-python src/experiment_runner.py
-```
 
 ---
 

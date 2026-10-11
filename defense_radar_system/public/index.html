@@ -378,6 +378,7 @@
 
           <div class="cam-feed-full-box">
             <canvas id="cameraPageCanvas"></canvas>
+            <canvas id="faceAuthOverlayCanvas"></canvas>
           </div>
         </div>
 
@@ -389,6 +390,75 @@
           <div class="cam-detection-list" id="camDetectionListContainer">
             <!-- Dynamically populated -->
           </div>
+
+          <div class="panel-section-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>BIOMETRIC ACCESS CONTROL</span>
+            <span class="snc-status neutral" id="faceAuthHeaderStatus">INITIALIZING</span>
+          </div>
+
+          <div class="face-auth-card" style="padding:12px; background:var(--bg-panel-subtle); border-bottom:1px solid var(--border-default); display:flex; flex-direction:column; gap:10px;">
+            <!-- Primary Action: + ADD AUTHORIZED PERSON -->
+            <button id="btnOpenAddPersonModal" class="btn-ops" style="width:100%; padding:9px 12px; font-size:11px; font-weight:700; background:rgba(24, 184, 214, 0.16); border:1px solid var(--radar-cyan); color:#fff; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; transition:all 0.15s ease;">
+              <span style="color:var(--radar-cyan); font-size:14px; font-weight:800; line-height:1;">+</span> ADD AUTHORIZED PERSON
+            </button>
+
+            <!-- Verification State Hero Readout -->
+            <div style="background:#050a0f; border:1px solid var(--border-default); border-radius:4px; padding:10px 12px;">
+              <div style="font-size:8px; color:var(--text-tertiary); font-family:var(--font-mono); letter-spacing:0.8px; margin-bottom:4px;">VERIFICATION STATE:</div>
+              <div id="faceAuthStatusBadge" style="font-size:14px; font-weight:800; font-family:var(--font-mono); letter-spacing:0.4px; color:var(--text-secondary); line-height:1.2;">
+                INITIALIZING...
+              </div>
+              <div id="faceAuthStatusDetail" style="font-size:9px; color:var(--text-secondary); font-family:var(--font-mono); margin-top:4px;">
+                Checking biometric neural models & reference roster...
+              </div>
+            </div>
+
+            <!-- Telemetry Stats Grid -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <div style="background:#070d14; border:1px solid var(--border-subtle); border-radius:3px; padding:6px 8px;">
+                <div style="font-size:8px; color:var(--text-tertiary); font-family:var(--font-mono);">ENROLLED ROSTER:</div>
+                <div id="faceAuthRosterCount" style="font-size:11px; font-weight:700; color:#fff; font-family:var(--font-mono); margin-top:2px;">0 IDENTITIES</div>
+              </div>
+              <div style="background:#070d14; border:1px solid var(--border-subtle); border-radius:3px; padding:6px 8px;">
+                <div style="font-size:8px; color:var(--text-tertiary); font-family:var(--font-mono);">LIVE SUBJECTS:</div>
+                <div id="faceAuthSubjectCount" style="font-size:11px; font-weight:700; color:var(--cam-blue); font-family:var(--font-mono); margin-top:2px;">0 IN FOV</div>
+              </div>
+            </div>
+
+            <!-- Per-Face Live Detection Readout -->
+            <div style="background:#070d14; border:1px solid var(--border-subtle); border-radius:3px; padding:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:8.5px; font-weight:700; color:var(--text-secondary); font-family:var(--font-mono);">PER-FACE LIVE EVALUATION:</span>
+                <span id="faceAuthDistance" style="font-size:8.5px; font-family:var(--font-mono); font-weight:700; color:var(--text-tertiary);">--</span>
+              </div>
+              <div id="faceAuthLiveSubjectsList" style="display:flex; flex-direction:column; gap:4px; max-height:85px; overflow-y:auto; font-family:var(--font-mono); font-size:9px;">
+                <div style="color:var(--text-tertiary); font-style:italic;">● Standby: No faces detected in optical feed</div>
+              </div>
+            </div>
+
+            <!-- Threshold Calibration Slider -->
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-top:1px solid var(--border-subtle); padding-top:8px;">
+              <div style="font-size:9px; color:var(--text-secondary); font-family:var(--font-mono);">
+                THRESHOLD (<span id="faceAuthThresholdVal" style="color:#fff; font-weight:700;">0.48</span>):
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="range" id="faceAuthThresholdSlider" min="0.30" max="0.70" step="0.01" value="0.48" style="width:90px; cursor:pointer; accent-color:var(--radar-cyan);">
+                <button id="btnFaceAuthResync" class="btn-ops" title="Re-sync enrolled reference identities" style="font-size:8.5px; padding:2px 6px;">SYNC</button>
+              </div>
+            </div>
+
+            <!-- Enrolled People List -->
+            <div style="border-top:1px solid var(--border-subtle); padding-top:8px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="font-size:8.5px; font-weight:700; color:var(--text-secondary); font-family:var(--font-mono);">REGISTERED PERSONNEL:</span>
+              </div>
+              <div id="faceAuthRosterList" style="display:flex; flex-direction:column; gap:4px; max-height:130px; overflow-y:auto;">
+                <!-- Populated dynamically: Person name + enrolled date + REMOVE button -->
+                <div style="font-size:8.5px; color:var(--state-warning); font-family:var(--font-mono); padding:4px 0;">NO AUTHORIZED PEOPLE ENROLLED</div>
+              </div>
+            </div>
+          </div>
+
 
           <div class="panel-section-title">
             <span>RADAR ↔ CAMERA CORRELATION</span>
@@ -422,6 +492,7 @@
           <div class="sos-logs-container" id="camOpticalEventLog" style="flex:1;">
             <!-- Dynamically populated -->
           </div>
+
         </aside>
 
       </div>
@@ -1538,6 +1609,55 @@
     </div>
   </div>
 
+  <!-- Add Authorized Person Biometric Enrollment Modal -->
+  <div class="modal-backdrop" id="modalAddAuthorizedPerson">
+    <div class="modal-dialog" style="width:480px; max-width:92vw;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-default); padding-bottom:8px;">
+        <span style="font-weight:700; color:#fff; font-size:12px; font-family:var(--font-mono); letter-spacing:0.5px;">+ ENROLL AUTHORIZED PERSON</span>
+        <button id="btnCloseEnrollModalX" style="background:transparent; border:none; color:var(--text-secondary); cursor:pointer; font-size:16px;">✕</button>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+        <!-- Person Name Input -->
+        <div>
+          <label style="font-size:9.5px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">PERSON'S NAME (REQUIRED):</label>
+          <input type="text" id="inputEnrollPersonName" style="width:100%; background:var(--bg-input); border:1px solid var(--border-default); color:#fff; padding:6px 8px; font-family:var(--font-mono); font-size:11px; border-radius:3px;" placeholder="e.g. Commander Sharma" required>
+        </div>
+
+        <!-- File Chooser -->
+        <div>
+          <label style="font-size:9.5px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">REFERENCE PHOTOGRAPH:</label>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <label for="inputEnrollPersonFile" class="btn-ops" style="background:var(--radar-cyan-dim); border:1px solid var(--radar-cyan); color:var(--radar-cyan); font-weight:700; cursor:pointer; padding:6px 12px; margin:0; font-size:10px;">
+              CHOOSE IMAGE
+              <input type="file" id="inputEnrollPersonFile" accept="image/jpeg,image/png,image/webp" style="display:none;">
+            </label>
+            <span id="enrollSelectedFilename" style="font-family:var(--font-mono); font-size:9.5px; color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:260px;">No file selected</span>
+          </div>
+        </div>
+
+        <!-- Image Preview & Face Inspection -->
+        <div id="enrollPreviewBox" style="background:var(--bg-panel-subtle); border:1px dashed var(--border-default); border-radius:4px; padding:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:160px;">
+          <img id="enrollImagePreview" style="max-height:160px; max-width:100%; border-radius:3px; display:none; object-fit:contain;" alt="Reference Preview">
+          <div id="enrollPreviewPlaceholder" style="font-size:10px; color:var(--text-tertiary); font-family:var(--font-mono); text-align:center;">
+            [ SELECT AN IMAGE TO PREVIEW & VALIDATE BIOMETRICS ]
+          </div>
+        </div>
+
+        <!-- Real-time Validation Message Area -->
+        <div id="enrollValidationMsg" style="font-family:var(--font-mono); font-size:9.5px; padding:6px 8px; border-radius:3px; background:rgba(215, 168, 75, 0.08); border:1px solid rgba(215, 168, 75, 0.25); color:var(--state-warning); line-height:1.4;">
+          Awaiting photo selection. Image must contain exactly one clear human face.
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px; border-top:1px solid var(--border-default); padding-top:10px;">
+        <button id="btnCancelEnrollModal" class="btn-ops">CANCEL</button>
+        <button id="btnSubmitEnrollModal" class="btn-ops" style="background:var(--state-verified); color:#000; font-weight:700; opacity:0.5; cursor:not-allowed;" disabled>ENROLL PERSON</button>
+      </div>
+    </div>
+  </div>
+
+
   <!-- ====================================================================
        4. SCRIPTS
        ==================================================================== -->
@@ -1545,6 +1665,8 @@
   <script src="js/camera.js"></script>
   <script src="js/spectrum.js"></script>
   <script src="js/analytics.js"></script>
+  <script src="vendor/face-api.js"></script>
+  <script src="js/face-auth.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

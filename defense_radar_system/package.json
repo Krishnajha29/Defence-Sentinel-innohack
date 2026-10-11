@@ -8,6 +8,7 @@
     "test": "node test/run_all_tests.js"
   },
   "dependencies": {
+    "@vladmandic/face-api": "^1.7.15",
     "express": "^4.19.2",
     "ws": "^8.18.0"
   },
