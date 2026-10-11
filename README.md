@@ -49,49 +49,60 @@ The system integrates:
 
 ---
 
-## System Architecture
+## 🏗️ System Architecture
 
+```text
+                         DEFENCE-SENTINEL
+                                |
+               +----------------+----------------+
+               |                                 |
+               v                                 v
+      C2 Tactical Dashboard              React Radar Scanner
+       HTML / CSS / JavaScript             React / TypeScript
+               |                                 |
+               +----------------+----------------+
+                                |
+                                v
+                     Backend Communication
+                         REST / WebSocket
+                                |
+                                v
+                       Node.js C2 Backend
+                                |
+              +-----------------+-----------------+
+              |                 |                 |
+              v                 v                 v
+        Radar & RF         Adaptive          Incident &
+        Simulation         Scheduler          Analytics
+              |                 |                 |
+              +-----------------+-----------------+
+                                |
+                                v
+                      Simulation & Telemetry
+                                |
+                                v
+                       Hardware Integration
+                                |
+                                v
+                         ESP32 / Sensors
+                     (When connected and configured)
+```
 
-The application is organized around the following logical components.
+### Architecture Components
 
----
-                  DEFENCE-SENTINEL
-                         |
-          +--------------+--------------+
-          |                             |
-          v                             v
-   Web Dashboard                 Radar Scanner
-   HTML / CSS / JS               React / TypeScript
-          |                             |
-          +--------------+--------------+
-                         |
-                         v
-              Backend Communication
-                  REST / WebSocket
-                         |
-                         v
-               Node.js C2 Backend
-                         |
-          +--------------+--------------+
-          |              |              |
-          v              v              v
-      Radar / RF      Scheduler     Incident Engine
-      Simulation      Engine        & Analytics
-          |              |              |
-          +--------------+--------------+
-                         |
-                         v
-                Simulation State
-                         |
-                         v
-              Optional Hardware Layer
-                         |
-                         v
-                ESP32 / Sensors
-             Only when implemented
+| Component | Responsibility |
+|---|---|
+| C2 Tactical Dashboard | Displays radar, RF/ESM, optical context, sensor fusion, analytics, and simulation controls. |
+| React Radar Scanner | Provides the radar visualization, target tracking interface, and alerts. |
+| Node.js C2 Backend | Manages application state, API requests, simulation services, and supported WebSocket communication. |
+| Radar & RF Simulation | Generates simulated radar tracks, RF activity, and related visualizations. |
+| Adaptive Scheduler | Implements the Recency-Augmented UCB1 scheduling algorithm. |
+| Incident & Analytics Engine | Manages simulated incidents, benchmark execution, metrics, and exports. |
+| Hardware Integration | Provides an integration point for ESP32 and compatible sensors when the required hardware, firmware, and communication interfaces are configured. |
 
----
+**Communication:** REST APIs support request/response operations, while WebSocket communication supports real-time telemetry where configured.
 
+**Deployment note:** The frontend is hosted on Vercel. Backend and hardware-dependent features require their corresponding services and connections to be configured and available.
 ## 7-Page Command & Control Suite
 
 | # | Page | Key Visual & Functional Features |
