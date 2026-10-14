@@ -1750,10 +1750,18 @@ app.get('/api/face-auth/photo/:id', (req, res) => {
 
 app.post('/api/face-auth/enroll', (req, res) => {
   try {
-    const { name, imageData, descriptor } = req.body || {};
-    if (!imageData || typeof imageData !== 'string') {
+    const { name, imageData, descriptor, modelVersion } = req.body || {};
+    if (!imageData || typeof imageData !== 'string' || imageData.length < 50) {
       return res.status(400).json({ error: 'Missing or invalid imageData string' });
     }
+
+    // Strict validation of biometric face descriptor: must be 128-d finite numbers
+    if (descriptor !== undefined && descriptor !== null) {
+      if (!Array.isArray(descriptor) || descriptor.length !== 128 || !descriptor.every(v => typeof v === 'number' && Number.isFinite(v))) {
+        return res.status(400).json({ error: 'Invalid face descriptor: must be a 128-dimensional array of finite floating-point numbers' });
+      }
+    }
+
     const personName = (name && typeof name === 'string' && name.trim()) ? name.trim() : 'Authorized Operator';
     if (!fs.existsSync(FACE_REF_DIR)) {
       fs.mkdirSync(FACE_REF_DIR, { recursive: true });
@@ -1776,7 +1784,9 @@ app.post('/api/face-auth/enroll', (req, res) => {
       name: personName,
       enrolledAt: new Date().toISOString(),
       filename: filename,
-      descriptor: Array.isArray(descriptor) ? descriptor : null
+      descriptor: Array.isArray(descriptor) ? descriptor : null,
+      modelVersion: modelVersion || 'face-recognition-net-v1',
+      algorithm: '128d-euclidean'
     };
     roster.push(newPerson);
     saveRoster(roster);

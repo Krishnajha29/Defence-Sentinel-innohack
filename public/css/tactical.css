@@ -690,6 +690,58 @@ body {
   border-bottom: 1px solid var(--border-default);
 }
 
+.face-auth-hero-box {
+  background: #04080e;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 12px;
+  transition: all 0.2s ease;
+}
+
+.face-auth-hero-box.state-authorized {
+  border-color: rgba(66, 196, 122, 0.5);
+  background: linear-gradient(180deg, rgba(66, 196, 122, 0.12) 0%, rgba(4, 10, 7, 0.95) 100%);
+  box-shadow: 0 0 18px rgba(66, 196, 122, 0.14);
+}
+
+.face-auth-hero-box.state-unauthorized {
+  border-color: rgba(255, 65, 65, 0.5);
+  background: linear-gradient(180deg, rgba(255, 65, 65, 0.14) 0%, rgba(14, 4, 4, 0.95) 100%);
+  box-shadow: 0 0 18px rgba(255, 65, 65, 0.15);
+}
+
+.face-auth-hero-box.state-challenge {
+  border-color: rgba(215, 168, 75, 0.55);
+  background: linear-gradient(180deg, rgba(215, 168, 75, 0.15) 0%, rgba(14, 10, 3, 0.95) 100%);
+  box-shadow: 0 0 20px rgba(215, 168, 75, 0.22);
+}
+
+.face-auth-hero-box.state-neutral {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(6, 10, 15, 0.95) 100%);
+}
+
+.face-auth-challenge-banner {
+  background: rgba(215, 168, 75, 0.1);
+  border: 1px solid rgba(215, 168, 75, 0.4);
+  border-radius: 4px;
+  padding: 8px 10px;
+  animation: challengePulse 1.8s infinite ease-in-out;
+}
+
+@keyframes challengePulse {
+  0% { box-shadow: 0 0 4px rgba(215, 168, 75, 0.2); border-color: rgba(215, 168, 75, 0.35); }
+  50% { box-shadow: 0 0 14px rgba(215, 168, 75, 0.45); border-color: rgba(215, 168, 75, 0.7); }
+  100% { box-shadow: 0 0 4px rgba(215, 168, 75, 0.2); border-color: rgba(215, 168, 75, 0.35); }
+}
+
+.face-auth-stat-box {
+  background: #070d14;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 6px 8px;
+}
+
 .roster-person-card {
   display: flex;
   justify-content: space-between;
@@ -697,7 +749,7 @@ body {
   background: #060b10;
   border: 1px solid var(--border-subtle);
   border-radius: 3px;
-  padding: 5px 8px;
+  padding: 6px 8px;
   font-family: var(--font-mono);
   font-size: 9px;
   transition: border-color 0.12s ease;
@@ -714,7 +766,7 @@ body {
   font-family: var(--font-mono);
   font-size: 8px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 2px;
   cursor: pointer;
   transition: all 0.12s ease;
