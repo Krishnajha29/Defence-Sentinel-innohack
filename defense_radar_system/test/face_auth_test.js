@@ -82,29 +82,59 @@ function euclideanDistance(d1, d2) {
   return Math.sqrt(sum);
 }
 
-// Simulated Liveness Evaluator (mirroring face-auth.js logic)
+function l2Normalize(vec) {
+  if (!vec) return vec;
+  let sum = 0;
+  for (let i = 0; i < vec.length; i++) sum += vec[i] * vec[i];
+  const norm = Math.sqrt(sum);
+  if (norm < 1e-6) return vec.slice();
+  return vec.map(v => v / norm);
+}
+
+// Simulated Liveness Evaluator (mirroring upgraded face-auth.js logic)
 class MockFaceAuthEngine {
-  constructor(roster, threshold = 0.48, ambiguityDelta = 0.04) {
-    this.roster = roster;
+  constructor(roster, threshold = 0.38, ambiguityDelta = 0.04) {
+    this.roster = roster.map(p => ({
+      ...p,
+      descriptor: l2Normalize(p.descriptor)
+    }));
     this.threshold = threshold;
     this.ambiguityDelta = ambiguityDelta;
     this.tracks = new Map();
+    this.currentSubject = 'NO SUBJECT IN FOV';
+    this.systemState = 'NO_FACE_DETECTED';
   }
 
-  evaluateFace(trackId, descriptor, livenessAction = null, isStaticPhoto = false, timestamp = Date.now()) {
+  handleNoFacesDetected() {
+    this.tracks.clear();
+    this.currentSubject = 'NO SUBJECT IN FOV';
+    this.systemState = 'NO_FACE_DETECTED';
+    return {
+      status: this.systemState,
+      currentSubject: this.currentSubject,
+      activeTracksCount: 0
+    };
+  }
+
+  evaluateFace(trackId, rawDescriptor, livenessAction = null, isStaticPhoto = false, timestamp = Date.now()) {
+    const descriptor = l2Normalize(rawDescriptor);
     let track = this.tracks.get(trackId);
     if (!track) {
       track = {
         trackId,
+        verificationSessionId: 'sess_' + Math.random().toString(36).slice(2, 8),
+        matchStreak: 0,
+        candidatePerson: null,
         livenessState: 'PENDING',
         challenge: 'TURN_HEAD_LEFT',
         startTime: timestamp,
-        deadline: timestamp + 8500
+        deadline: timestamp + 7000,
+        confirmedIdentity: null
       };
       this.tracks.set(trackId, track);
     }
 
-    // Step 1: Match against enrolled roster
+    // Step 1: Normalized Euclidean distance matching against roster
     let bestDist = 999.0;
     let secondDist = 999.0;
     let bestPerson = null;
@@ -121,30 +151,62 @@ class MockFaceAuthEngine {
     }
 
     const isAmbiguous = (bestPerson !== null && (secondDist - bestDist) < this.ambiguityDelta && bestDist <= this.threshold);
-    const isIdentityMatch = (bestDist <= this.threshold && bestPerson !== null && !isAmbiguous);
+    const isSingleMatch = (bestDist <= this.threshold && bestPerson !== null && !isAmbiguous);
+
+    // Multi-frame temporal consensus (requires 3 consecutive matching frames)
+    if (isSingleMatch) {
+      if (track.candidatePerson && track.candidatePerson.id === bestPerson.id) {
+        track.matchStreak++;
+      } else {
+        track.candidatePerson = bestPerson;
+        track.matchStreak = 1;
+      }
+    } else {
+      track.matchStreak = 0;
+      track.candidatePerson = null;
+    }
+
+    const identityConfirmed = isSingleMatch && (track.matchStreak >= 3);
+    if (identityConfirmed) {
+      track.confirmedIdentity = bestPerson;
+      this.currentSubject = bestPerson.name.toUpperCase();
+    } else if (!isSingleMatch) {
+      this.currentSubject = 'UNKNOWN PERSON';
+    }
 
     if (isAmbiguous) {
+      this.systemState = 'UNAUTHORIZED';
       return { status: 'UNAUTHORIZED', label: 'UNAUTHORIZED · AMBIGUOUS MATCH', distance: bestDist };
     }
-    if (!isIdentityMatch) {
-      return { status: 'UNAUTHORIZED', label: 'UNAUTHORIZED · UNKNOWN PERSON', distance: bestDist };
+    if (!isSingleMatch || !identityConfirmed) {
+      this.systemState = 'UNKNOWN_PERSON';
+      return {
+        status: 'UNKNOWN_PERSON',
+        label: isSingleMatch ? `VERIFYING IDENTITY (${track.matchStreak}/3)` : 'UNAUTHORIZED · UNKNOWN PERSON',
+        distance: bestDist,
+        streak: track.matchStreak
+      };
     }
 
     // Step 2: Presentation Attack & Liveness Verification
     // RULE: A matching face descriptor alone NEVER grants authorization!
     if (track.livenessState === 'PENDING') {
       track.livenessState = 'CHALLENGE_ACTIVE';
+      this.systemState = 'LIVENESS_CHECK_REQUIRED';
     }
 
     if (track.livenessState === 'CHALLENGE_ACTIVE') {
       if (isStaticPhoto) {
         track.livenessState = 'FAILED';
         track.failReason = 'Planar static photo presentation attack';
+        this.systemState = 'LIVENESS_FAILED';
       } else if (timestamp > track.deadline) {
         track.livenessState = 'FAILED';
         track.failReason = 'Challenge timeout';
+        this.systemState = 'LIVENESS_FAILED';
       } else if (livenessAction === track.challenge) {
         track.livenessState = 'VERIFIED';
+        this.systemState = 'AUTHORIZED';
       }
     }
 
@@ -153,22 +215,25 @@ class MockFaceAuthEngine {
         status: 'AUTHORIZED',
         label: `AUTHORIZED · ${bestPerson.name.toUpperCase()}`,
         distance: bestDist,
-        liveness: 'VERIFIED'
+        liveness: 'VERIFIED',
+        sessionId: track.verificationSessionId
       };
     } else if (track.livenessState === 'CHALLENGE_ACTIVE') {
       const remSec = Math.max(0, (track.deadline - timestamp) / 1000);
       return {
-        status: 'LIVENESS CHECK REQUIRED',
+        status: 'LIVENESS_CHECK_REQUIRED',
         label: `⚡ ${track.challenge} (${remSec.toFixed(1)}s)`,
         distance: bestDist,
-        liveness: 'CHALLENGE_ACTIVE'
+        liveness: 'CHALLENGE_ACTIVE',
+        sessionId: track.verificationSessionId
       };
     } else {
       return {
         status: 'UNAUTHORIZED',
         label: 'UNAUTHORIZED · LIVENESS FAILED',
         distance: bestDist,
-        liveness: 'FAILED'
+        liveness: 'FAILED',
+        sessionId: track.verificationSessionId
       };
     }
   }
@@ -263,43 +328,77 @@ async function runFaceAuthTests() {
       { id: idPersonA, name: 'Commander Sharma', descriptor: descPersonA },
       { id: idPersonB, name: 'Operator Verma', descriptor: descPersonB }
     ];
-    const engine = new MockFaceAuthEngine(testRoster, 0.48, 0.04);
+    const engine = new MockFaceAuthEngine(testRoster, 0.38, 0.04);
 
     const now = Date.now();
-    // TEST A: Matching Person A photograph shown on a phone (ZERO physical liveness action)
-    const phonePhotoRes = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now);
-    assert.strictEqual(phonePhotoRes.status, 'LIVENESS CHECK REQUIRED', 'Matching descriptor alone must NOT authorize');
-    assert.notStrictEqual(phonePhotoRes.status, 'AUTHORIZED', 'Phone photo cannot bypass liveness stage');
-    console.log('  ✓ BUG FIX CONFIRMED: Photo on phone matched descriptor (dist: ' + phonePhotoRes.distance.toFixed(4) + ') but authorization was WITHHELD (Status: ' + phonePhotoRes.status + ')');
+    // TEST A: Multi-Frame Temporal Consensus (Frame 1 & 2 streak building)
+    const frame1 = engine.evaluateFace('trk_user_a', descPersonA, null, false, now);
+    assert.strictEqual(frame1.status, 'UNKNOWN_PERSON', 'Single initial frame must not immediately authenticate');
+    assert.strictEqual(frame1.streak, 1);
+    const frame2 = engine.evaluateFace('trk_user_a', descPersonA, null, false, now + 100);
+    assert.strictEqual(frame2.streak, 2);
+    // Frame 3 establishes consensus streak >= 3
+    const frame3 = engine.evaluateFace('trk_user_a', descPersonA, null, false, now + 200);
+    assert.strictEqual(frame3.status, 'LIVENESS_CHECK_REQUIRED');
+    console.log('  ✓ Multi-Frame Temporal Consensus: Single noise frame filtered; 3 matching frames required');
 
-    // TEST B: Phone photo held until challenge timeout (8.5s elapsed)
-    const timeoutRes = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 9000);
+    // TEST B: Matching Person A photograph shown on a phone (ZERO physical liveness action)
+    const phonePhotoRes = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now);
+    engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 50);
+    const phonePhotoRes3 = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 100);
+    assert.strictEqual(phonePhotoRes3.status, 'LIVENESS_CHECK_REQUIRED', 'Matching descriptor alone must NOT authorize');
+    assert.notStrictEqual(phonePhotoRes3.status, 'AUTHORIZED', 'Phone photo cannot bypass liveness stage');
+    console.log('  ✓ BUG FIX CONFIRMED: Photo on phone matched descriptor (dist: ' + phonePhotoRes3.distance.toFixed(4) + ') but authorization was WITHHELD (Status: ' + phonePhotoRes3.status + ')');
+
+    // TEST C: Phone photo held until challenge timeout (7.0s elapsed)
+    const timeoutRes = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 8000);
     assert.strictEqual(timeoutRes.status, 'UNAUTHORIZED', 'Expired challenge must result in UNAUTHORIZED');
     assert.strictEqual(timeoutRes.liveness, 'FAILED', 'Expired challenge marks liveness FAILED');
     console.log('  ✓ Liveness Timeout: Phone photo challenge timed out -> UNAUTHORIZED · LIVENESS FAILED');
 
-    // TEST C: Static planar rigidity detection (replayed motionless picture)
+    // TEST D: Static planar rigidity detection (replayed motionless picture)
+    // Streak established
+    engine.evaluateFace('trk_planar_spoof', descPersonA, null, false, now);
+    engine.evaluateFace('trk_planar_spoof', descPersonA, null, false, now + 50);
+    engine.evaluateFace('trk_planar_spoof', descPersonA, null, false, now + 100);
     const staticSpoofRes = engine.evaluateFace('trk_planar_spoof', descPersonA, null, true, now + 1000);
     assert.strictEqual(staticSpoofRes.status, 'UNAUTHORIZED');
     assert.strictEqual(staticSpoofRes.liveness, 'FAILED');
     console.log('  ✓ Planar Rigidity Check: Static 2D photo replay flagged and rejected');
 
-    // TEST D: Genuine live person completes requested head movement
-    const livePersonStep1 = engine.evaluateFace('trk_live_user', descPersonA, null, false, now);
-    assert.strictEqual(livePersonStep1.status, 'LIVENESS CHECK REQUIRED');
+    // TEST E: Genuine live person completes requested head movement
+    engine.evaluateFace('trk_live_user', descPersonA, null, false, now);
+    engine.evaluateFace('trk_live_user', descPersonA, null, false, now + 50);
+    const livePersonStep1 = engine.evaluateFace('trk_live_user', descPersonA, null, false, now + 100);
+    assert.strictEqual(livePersonStep1.status, 'LIVENESS_CHECK_REQUIRED');
     const livePersonStep2 = engine.evaluateFace('trk_live_user', descPersonA, 'TURN_HEAD_LEFT', false, now + 2000);
     assert.strictEqual(livePersonStep2.status, 'AUTHORIZED', 'Live action + matching descriptor grants authorization');
     assert.strictEqual(livePersonStep2.label, 'AUTHORIZED · COMMANDER SHARMA');
+    assert.ok(livePersonStep2.sessionId, 'Verification session ID must be issued');
     console.log('  ✓ Genuine Physical Presence: Active challenge completed -> ' + livePersonStep2.label);
 
-    // TEST E: Simultaneous Multi-Face Independence (One live authorized + one unknown + one phone photo)
+    // TEST F: CRITICAL BUG FIX - Absent Person / Zero-Face Clearing
+    // When Commander Sharma (or Sudhanshu) walks out of frame, handleNoFacesDetected() MUST reset immediately
+    assert.strictEqual(engine.currentSubject, 'COMMANDER SHARMA');
+    const absentResult = engine.handleNoFacesDetected();
+    assert.strictEqual(absentResult.currentSubject, 'NO SUBJECT IN FOV', 'Absence must immediately clear subject name');
+    assert.strictEqual(absentResult.status, 'NO_FACE_DETECTED', 'Status must reset to NO_FACE_DETECTED');
+    assert.strictEqual(absentResult.activeTracksCount, 0, 'Active tracks must be purged');
+    console.log('  ✓ ABSENT SUBJECT BUG FIXED: When person leaves camera FOV, identity & auth are immediately purged');
+
+    // TEST G: Simultaneous Multi-Face Independence (One live authorized + one unknown + one phone photo)
+    engine.evaluateFace('trk_live_user', descPersonA, null, false, now);
+    engine.evaluateFace('trk_live_user', descPersonA, null, false, now + 50);
     const faceLive = engine.evaluateFace('trk_live_user', descPersonA, 'TURN_HEAD_LEFT', false, now + 2000);
     const unknownDesc = new Array(128).fill(0.9);
     const faceUnknown = engine.evaluateFace('trk_unknown', unknownDesc, null, false, now + 2000);
-    const facePhone = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 9000);
+    engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now);
+    engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 50);
+    engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 100);
+    const facePhone = engine.evaluateFace('trk_phone_spoof', descPersonA, null, false, now + 8000);
 
     assert.strictEqual(faceLive.status, 'AUTHORIZED', 'Face 1 must be AUTHORIZED');
-    assert.strictEqual(faceUnknown.status, 'UNAUTHORIZED', 'Face 2 must be UNAUTHORIZED');
+    assert.strictEqual(faceUnknown.status, 'UNKNOWN_PERSON', 'Face 2 must be UNKNOWN_PERSON');
     assert.strictEqual(facePhone.status, 'UNAUTHORIZED', 'Face 3 (phone spoof) must be UNAUTHORIZED');
     console.log('  ✓ Independent Multi-Face Verification: Live Authorized, Unknown, and Phone Spoof evaluated independently');
 

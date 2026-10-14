@@ -1,34 +1,23 @@
 /**
  * Defence-Sentinel: Advanced Multi-Person Face Authentication & Anti-Spoofing Sentry Subsystem
  * 
- * Core Capabilities:
- * 1. Multi-Stage Liveness Verification (PAD v2) & Presentation-Attack Defense:
- *    - Dual-layer anti-spoofing: randomized active biometric challenges + temporal landmark planar rigidity analysis.
- *    - Photo-on-phone presentation attacks are decisively blocked (challenge timeout + planar rigidity detection).
- *    - A matching face descriptor alone NEVER grants authorization.
- * 2. Multi-Person Image Enrollment & Storage:
- *    - '+ ADD AUTHORIZED PERSON' modal with 1-face validation (rejects 0 or >1 faces).
- *    - 128-dimensional Float32Array template extraction with finite value validation.
- *    - Local persistence in private/face-reference/roster.json without cloud dependencies.
- *    - Individual removal with real-time roster synchronization.
- * 3. Independent Verification For Every Face:
- *    - Spatial IoU & centroid multi-face tracker.
- *    - Independent identity matching, independent liveness challenge, and independent authorization per face.
- *    - Never uses a global authorization flag; one person's liveness never authorizes another.
- * 4. Configurable & Conservative Matching:
- *    - Euclidean distance threshold (calibrated 0.48, adjustable 0.30 - 0.70).
- *    - Ambiguity detection (rejects near-equal distances to multiple enrolled identities).
- *    - Distinguishes face detection confidence from identity match confidence.
- * 5. Modern Redesigned Tactical UI & Explainable Audit Trail:
- *    - Prominent hero verification state badge with glowing state-tinted cards.
- *    - Active challenge directive with real-time countdown timer & progress bar.
- *    - Rolling audit trail of authentication decisions with explainable reasons.
- *    - Clean rectangular HUD bounding boxes (no silhouettes, no stick figures).
- * 6. Explicit 16-State Lifecycle Management:
- *    - INITIALIZING, LOADING MODELS, LOADING REFERENCES, READY, FACE DETECTED,
- *      MATCHING IDENTITY, LIVENESS CHECK REQUIRED, LIVENESS VERIFIED, AUTHORIZED,
- *      UNAUTHORIZED, UNKNOWN PERSON, LIVENESS FAILED, LIVENESS UNVERIFIED,
- *      NO FACE DETECTED, NO AUTHORIZED PEOPLE ENROLLED, VERIFICATION UNAVAILABLE.
+ * Core Architectural Guarantees:
+ * 1. Zero Stale/Absent Identity Display:
+ *    - Immediately clears subject and active authorization when face disappears.
+ *    - Normalized Euclidean distance + multi-frame temporal consensus (3-frame streak) prevents false identity attribution.
+ *    - Strict face quality filters (minimum 55x55px and 0.65 detector confidence).
+ * 2. Strict Separation of Identity Matching & Liveness:
+ *    - 'IDENTITY_MATCHED' is a distinct intermediate state (amber/cyan).
+ *    - Identity match ALONE NEVER grants authorization.
+ * 3. Session-Bound Presentation Attack Defense (PAD v2):
+ *    - Randomized active biometric challenges bound to an ephemeral verificationSessionId.
+ *    - Invalidation on track loss (>0.6s), session expiry (7.0s timeout), or static planar rigidity.
+ * 4. Independent Multi-Face Verification:
+ *    - Every detected face has its own trackId, session, candidate identity, and liveness state.
+ * 5. Explicit 14-State Lifecycle Machine:
+ *    - INITIALIZING, LOADING_MODELS, READY, NO_FACE_DETECTED, FACE_DETECTED,
+ *      IDENTITY_MATCHED, UNKNOWN_PERSON, LIVENESS_CHECK_REQUIRED, LIVENESS_VERIFIED,
+ *      LIVENESS_FAILED, AUTHORIZED, UNAUTHORIZED, TRACK_LOST, VERIFICATION_UNAVAILABLE.
  */
 
 class FaceAuthenticationEngine {
@@ -36,9 +25,10 @@ class FaceAuthenticationEngine {
     this.api = window.faceapi || (typeof faceapi !== 'undefined' ? faceapi : null);
     this.modelsLoaded = false;
     this.isLoadingModels = false;
-    this.roster = []; // Array of { id, name, enrolledAt, filename, descriptor: Float32Array }
-    this.matchThreshold = 0.48; // Euclidean distance threshold (lower = stricter)
-    this.ambiguityDelta = 0.04; // Minimum gap between 1st & 2nd best match to avoid ambiguity
+    this.roster = []; // Array of { id, name, enrolledAt, filename, descriptor: Float32Array (128D normalized) }
+    this.matchThreshold = 0.38; // Calibrated L2-normalized Euclidean distance threshold
+    this.ambiguityDelta = 0.05; // Minimum margin between top 2 enrolled candidates
+    this.requiredStreak = 3; // Consecutive matching frames required to confirm identity
     
     this.isDetecting = false;
     this.detectionInterval = null;
@@ -47,7 +37,10 @@ class FaceAuthenticationEngine {
     // Multi-face spatial tracker
     this.tracks = new Map(); // trackId -> TrackObject
     this.nextTrackNum = 1;
-    this.maxMissedFrames = 8; // Drop track if not detected for ~1.3s (invalidates liveness token)
+    this.maxMissedFrames = 4; // Drop track if not detected for >0.6s (invalidates session & liveness)
+
+    // Current primary subject displayed in hero box
+    this.activeSubject = null;
 
     // Audit trail log (rolling 15 events)
     this.auditTrail = [];
@@ -222,9 +215,14 @@ class FaceAuthenticationEngine {
 
   resetAllLivenessTracks(reason = 'Session reset') {
     this.tracks.clear();
+    this.activeSubject = null;
     this.recordAuditEvent('SYSTEM', 'RESET', reason);
-    this.updateStatusBadge('LIVENESS CHECK REQUIRED', 'warning', 'Liveness tokens invalidated. Re-verifying subjects in FOV...');
+    this.updateStatusBadge('LIVENESS_CHECK_REQUIRED', 'warning', 'Liveness tokens invalidated. Re-verifying subjects in FOV...');
     if (this.challengeBoxEl) this.challengeBoxEl.style.display = 'none';
+    if (this.matchedNameEl) {
+      this.matchedNameEl.textContent = 'NO SUBJECT IN FOV';
+      this.matchedNameEl.style.color = 'var(--text-secondary)';
+    }
   }
 
   resizeCanvas() {
@@ -240,14 +238,34 @@ class FaceAuthenticationEngine {
     }
   }
 
-  euclideanDistance(d1, d2) {
-    if (!d1 || !d2 || d1.length !== 128 || d2.length !== 128) return 1.0;
+  /**
+   * L2 Vector Normalization: Ensures invariant vector magnitude
+   */
+  l2Normalize(vec) {
+    if (!vec || vec.length !== 128) return null;
     let sum = 0;
     for (let i = 0; i < 128; i++) {
-      const v1 = d1[i];
-      const v2 = d2[i];
-      if (!Number.isFinite(v1) || !Number.isFinite(v2)) return 1.0;
-      const diff = v1 - v2;
+      const v = vec[i];
+      if (!Number.isFinite(v)) return null;
+      sum += v * v;
+    }
+    const mag = Math.sqrt(sum);
+    if (mag < 1e-6) return null;
+    const norm = new Float32Array(128);
+    for (let i = 0; i < 128; i++) {
+      norm[i] = vec[i] / mag;
+    }
+    return norm;
+  }
+
+  euclideanDistance(d1, d2) {
+    if (!d1 || !d2 || d1.length !== 128 || d2.length !== 128) return 1.0;
+    const n1 = this.l2Normalize(d1);
+    const n2 = this.l2Normalize(d2);
+    if (!n1 || !n2) return 1.0;
+    let sum = 0;
+    for (let i = 0; i < 128; i++) {
+      const diff = n1[i] - n2[i];
       sum += diff * diff;
     }
     return Math.sqrt(sum);
@@ -256,14 +274,14 @@ class FaceAuthenticationEngine {
   async loadModels() {
     if (!this.api) {
       console.warn('[FaceAuth] faceapi library not found in window scope');
-      this.updateStatusBadge('VERIFICATION UNAVAILABLE', 'critical', 'face-api.js neural library not loaded');
+      this.updateStatusBadge('VERIFICATION_UNAVAILABLE', 'critical', 'face-api.js neural library not loaded');
       if (this.modelsStateEl) this.modelsStateEl.textContent = 'MODELS: OFFLINE';
       return;
     }
     if (this.modelsLoaded || this.isLoadingModels) return;
 
     this.isLoadingModels = true;
-    this.updateStatusBadge('LOADING MODELS', 'neutral', 'Loading local neural models from /models...');
+    this.updateStatusBadge('LOADING_MODELS', 'neutral', 'Loading local neural models from /models...');
     if (this.modelsStateEl) this.modelsStateEl.textContent = 'MODELS: LOADING...';
 
     try {
@@ -281,27 +299,27 @@ class FaceAuthenticationEngine {
       this.isLoadingModels = false;
       this.modelsLoaded = false;
       console.error('[FaceAuth] Failed to load neural face models:', err);
-      this.updateStatusBadge('VERIFICATION UNAVAILABLE', 'critical', 'Neural model loading error: ' + err.message);
+      this.updateStatusBadge('VERIFICATION_UNAVAILABLE', 'critical', 'Neural model loading error: ' + err.message);
       if (this.modelsStateEl) this.modelsStateEl.textContent = 'MODELS: ERROR';
     }
   }
 
   async syncRoster() {
     try {
-      this.updateStatusBadge('LOADING REFERENCES', 'neutral', 'Retrieving enrolled authorized identities from private storage...');
+      this.updateStatusBadge('LOADING_MODELS', 'neutral', 'Retrieving enrolled authorized identities from private storage...');
       const res = await fetch('/api/face-auth/roster', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to load roster endpoint: ' + res.status);
       const data = await res.json();
 
       let people = Array.isArray(data.people) ? data.people : [];
 
-      // Convert stored descriptor arrays to Float32Array instances and validate
+      // Convert stored descriptor arrays to Float32Array instances and L2-normalize
       this.roster = people.map(p => ({
         id: p.id,
         name: p.name || 'Authorized Operator',
         enrolledAt: p.enrolledAt,
         filename: p.filename,
-        descriptor: (Array.isArray(p.descriptor) && p.descriptor.length === 128) ? new Float32Array(p.descriptor) : null
+        descriptor: (Array.isArray(p.descriptor) && p.descriptor.length === 128) ? this.l2Normalize(new Float32Array(p.descriptor)) : null
       }));
 
       // If any person is missing descriptor, load photo and extract descriptor locally
@@ -314,7 +332,7 @@ class FaceAuthenticationEngine {
               .withFaceLandmarks(true)
               .withFaceDescriptor();
             if (det && det.descriptor && det.descriptor.length === 128) {
-              p.descriptor = det.descriptor;
+              p.descriptor = this.l2Normalize(det.descriptor);
             }
           } catch (e) {
             console.warn(`[FaceAuth] Could not extract descriptor for ${p.name}:`, e);
@@ -322,19 +340,19 @@ class FaceAuthenticationEngine {
         }
       }
 
-      // Filter to only those with valid 128-d descriptors
+      // Filter to only those with valid 128-d normalized descriptors
       this.roster = this.roster.filter(p => p.descriptor && p.descriptor.length === 128 && p.descriptor.every(n => Number.isFinite(n)));
 
       this.renderRosterUI();
 
       if (this.roster.length === 0) {
-        this.updateStatusBadge('NO AUTHORIZED PEOPLE ENROLLED', 'warning', "Click '+ ADD AUTHORIZED PERSON' to enroll authorized personnel.");
+        this.updateStatusBadge('READY', 'warning', "Click '+ ADD AUTHORIZED PERSON' to enroll authorized personnel.");
         if (this.headerStatusEl) {
           this.headerStatusEl.textContent = 'NO ROSTER';
           this.headerStatusEl.className = 'snc-status warning';
         }
       } else {
-        this.updateStatusBadge('NO FACE DETECTED', 'neutral', `${this.roster.length} authorized identities active · Awaiting subjects in FOV`);
+        this.updateStatusBadge('NO_FACE_DETECTED', 'neutral', `${this.roster.length} authorized identities active · Awaiting subjects in FOV`);
         if (this.headerStatusEl) {
           this.headerStatusEl.textContent = 'READY';
           this.headerStatusEl.className = 'snc-status verified';
@@ -342,7 +360,7 @@ class FaceAuthenticationEngine {
       }
     } catch (err) {
       console.error('[FaceAuth] Error syncing roster:', err);
-      this.updateStatusBadge('VERIFICATION UNAVAILABLE', 'critical', 'Roster sync failed: ' + err.message);
+      this.updateStatusBadge('VERIFICATION_UNAVAILABLE', 'critical', 'Roster sync failed: ' + err.message);
     }
   }
 
@@ -369,7 +387,7 @@ class FaceAuthenticationEngine {
           card.innerHTML = `
             <div style="display:flex; flex-direction:column; overflow:hidden; max-width:180px;">
               <span style="font-weight:700; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${person.name}</span>
-              <span style="font-size:7.5px; color:var(--text-tertiary);">Enrolled: ${dateStr} · 128D Vector Active</span>
+              <span style="font-size:7.5px; color:var(--text-tertiary);">Enrolled: ${dateStr} · 128D Normalized</span>
             </div>
             <button class="btn-remove-person" data-id="${person.id}">REMOVE</button>
           `;
@@ -437,11 +455,12 @@ class FaceAuthenticationEngine {
       // Update memory roster immediately
       this.roster = this.roster.filter(p => p.id !== personId);
       this.tracks.clear(); // Reset tracks so matching re-evaluates cleanly
+      this.activeSubject = null;
       this.renderRosterUI();
       this.recordAuditEvent(personName, 'REMOVED', 'Identity purged from private biometric storage');
 
       if (this.roster.length === 0) {
-        this.updateStatusBadge('NO AUTHORIZED PEOPLE ENROLLED', 'warning', "Click '+ ADD AUTHORIZED PERSON' to enroll authorized personnel.");
+        this.updateStatusBadge('READY', 'warning', "Click '+ ADD AUTHORIZED PERSON' to enroll authorized personnel.");
       }
     } catch (err) {
       alert('Failed to remove identity: ' + err.message);
@@ -566,7 +585,8 @@ class FaceAuthenticationEngine {
           }
 
           // Exactly 1 clear face detected!
-          const desc = detections[0].descriptor;
+          const rawDesc = detections[0].descriptor;
+          const desc = this.l2Normalize(rawDesc);
           if (!desc || desc.length !== 128 || !desc.every(v => Number.isFinite(v))) {
             throw new Error('Generated descriptor failed mathematical integrity check');
           }
@@ -575,7 +595,7 @@ class FaceAuthenticationEngine {
           const conf = (detections[0].detection.score * 100).toFixed(1);
 
           if (this.modalValidationMsgEl) {
-            this.modalValidationMsgEl.textContent = `✓ VALID FACE DETECTED (Detection Confidence: ${conf}%). 128-D Biometric template extracted. Ready to enroll.`;
+            this.modalValidationMsgEl.textContent = `✓ VALID FACE DETECTED (Detection Confidence: ${conf}%). 128-D Normalized template generated. Ready to enroll.`;
             this.modalValidationMsgEl.style.color = 'var(--state-verified)';
             this.modalValidationMsgEl.style.background = 'rgba(66, 196, 122, 0.1)';
             this.modalValidationMsgEl.style.borderColor = 'rgba(66, 196, 122, 0.3)';
@@ -650,7 +670,7 @@ class FaceAuthenticationEngine {
       this.closeEnrollModal();
       this.recordAuditEvent(newPerson.name, 'ENROLLED', 'Enrolled with 128D validated descriptor');
 
-      this.updateStatusBadge('NO FACE DETECTED', 'neutral', `${this.roster.length} authorized identities active · Awaiting subjects in FOV`);
+      this.updateStatusBadge('NO_FACE_DETECTED', 'neutral', `${this.roster.length} authorized identities active · Awaiting subjects in FOV`);
       if (this.headerStatusEl) {
         this.headerStatusEl.textContent = 'READY';
         this.headerStatusEl.className = 'snc-status verified';
@@ -695,21 +715,23 @@ class FaceAuthenticationEngine {
 
     const video = this.getVideoElement();
     if (!video || video.readyState < 2 || video.paused || video.ended) {
-      this.clearOverlay();
-      if (this.subjectCountEl) this.subjectCountEl.textContent = '0 IN FOV';
-      if (this.challengeBoxEl) this.challengeBoxEl.style.display = 'none';
+      this.handleNoFacesDetected();
       return;
     }
 
     this.isDetecting = true;
     try {
-      const options = new this.api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+      const options = new this.api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.55 });
       const detections = await this.api.detectAllFaces(video, options)
         .withFaceLandmarks(true)
         .withFaceDescriptors()
         .withFaceExpressions();
 
-      this.evaluateDetections(detections, video);
+      if (!detections || detections.length === 0) {
+        this.handleNoFacesDetected();
+      } else {
+        this.evaluateDetections(detections, video);
+      }
     } catch (err) {
       console.warn('[FaceAuth] Inference error during frame detection:', err);
     } finally {
@@ -718,7 +740,50 @@ class FaceAuthenticationEngine {
   }
 
   /**
-   * Spatial multi-face tracking via Bounding Box IoU & Centroid Distance
+   * CRITICAL BUG FIX: Immediate clearing when faces leave FOV
+   * Never retains or displays a previous identity when absent!
+   */
+  handleNoFacesDetected() {
+    // Revoke any active sessions and log if they were in challenge/authorized
+    for (const [id, track] of this.tracks.entries()) {
+      if (track.livenessState === 'CHALLENGE_ACTIVE' || track.state === 'AUTHORIZED') {
+        this.recordAuditEvent(track.matchedPerson?.name || 'SUBJECT', 'TRACK_LOST', 'Face disappeared from optical FOV (Session revoked)');
+      }
+    }
+
+    this.tracks.clear();
+    this.activeSubject = null;
+    this.clearOverlay();
+
+    if (this.challengeBoxEl) this.challengeBoxEl.style.display = 'none';
+    if (this.subjectCountEl) this.subjectCountEl.textContent = '0 IN FOV';
+    if (this.distanceEl) this.distanceEl.textContent = '--';
+    if (this.matchedNameEl) {
+      this.matchedNameEl.textContent = 'NO SUBJECT IN FOV';
+      this.matchedNameEl.style.color = 'var(--text-secondary)';
+    }
+
+    if (this.roster.length === 0) {
+      this.updateStatusBadge('READY', 'warning', "Click '+ ADD AUTHORIZED PERSON' to register authorized personnel.");
+      if (this.headerStatusEl) {
+        this.headerStatusEl.textContent = 'NO ROSTER';
+        this.headerStatusEl.className = 'snc-status warning';
+      }
+    } else {
+      this.updateStatusBadge('NO_FACE_DETECTED', 'neutral', `${this.roster.length} authorized identities active · Awaiting subjects in FOV`);
+      if (this.headerStatusEl) {
+        this.headerStatusEl.textContent = 'READY';
+        this.headerStatusEl.className = 'snc-status verified';
+      }
+    }
+
+    if (this.liveSubjectsListEl) {
+      this.liveSubjectsListEl.innerHTML = `<div style="color:var(--text-tertiary); font-style:italic;">● Standby: No faces detected in optical feed</div>`;
+    }
+  }
+
+  /**
+   * Spatial multi-face tracking via Centroid Distance with strict session invalidation
    */
   matchDetectionsToTracks(detections) {
     const now = Date.now();
@@ -735,7 +800,7 @@ class FaceAuthenticationEngine {
       const detCenter = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
       let bestTrack = null;
-      let bestDist = 120; // Max pixel drift threshold between consecutive frames
+      let bestDist = 110; // Max allowable pixel drift between consecutive frames
 
       for (const [id, track] of this.tracks.entries()) {
         const trkCenter = { x: track.box.x + track.box.width / 2, y: track.box.y + track.box.height / 2 };
@@ -755,40 +820,47 @@ class FaceAuthenticationEngine {
         bestTrack.totalFramesSeen++;
         activeTracks.push(bestTrack);
       } else {
-        // Create new track with its OWN independent liveness lifecycle
+        // Create new track with its OWN independent verificationSessionId
         const newTrackId = `TRK-${String(this.nextTrackNum++).padStart(2, '0')}`;
+        const newSessionId = `sess_${now}_${Math.random().toString(36).substring(2, 7)}`;
         const newTrack = {
           trackId: newTrackId,
+          verificationSessionId: newSessionId,
           box: box,
           detection: det,
           lastSeen: now,
           missedFrames: 0,
           totalFramesSeen: 1,
+          state: 'FACE_DETECTED',
+          candidateMatch: null,
+          matchStreak: 0,
           matchedPerson: null,
           distance: 999.0,
           isAmbiguous: false,
-          // Liveness State: PENDING, CHALLENGE_ACTIVE, VERIFIED, FAILED, UNVERIFIED
-          liveness: {
-            state: 'PENDING',
-            challengeType: null,
-            challengePrompt: '',
-            startTime: 0,
-            deadline: 0,
-            baseline: null,
-            passedReason: '',
-            failReason: '',
-            blinkObservedClosed: false
-          },
+          livenessState: 'PENDING',
+          challengeType: null,
+          challengePrompt: '',
+          challengeHint: '',
+          challengeStartTime: 0,
+          challengeDeadline: 0,
+          challengeBaseline: null,
+          passedReason: '',
+          failReason: '',
+          blinkObservedClosed: false,
           temporalHistory: []
         };
         this.tracks.set(newTrackId, newTrack);
         activeTracks.push(newTrack);
+        this.recordAuditEvent(`FACE #${newTrackId}`, 'FACE_DETECTED', `Track created (Session ${newSessionId.slice(-6)})`);
       }
     }
 
-    // Purge expired tracks (face lost or covered for > 1.2s)
+    // Purge expired tracks (>0.6s / 4 missed frames)
     for (const [id, track] of this.tracks.entries()) {
       if (track.missedFrames > this.maxMissedFrames) {
+        if (track.state === 'AUTHORIZED' || track.livenessState === 'CHALLENGE_ACTIVE') {
+          this.recordAuditEvent(track.matchedPerson?.name || `FACE #${id}`, 'TRACK_LOST', 'Face track lost (>0.6s) - Session terminated');
+        }
         this.tracks.delete(id);
       }
     }
@@ -802,32 +874,19 @@ class FaceAuthenticationEngine {
     // 1. Check if roster is empty
     if (this.roster.length === 0) {
       this.tracks.clear();
+      this.activeSubject = null;
       if (this.challengeBoxEl) this.challengeBoxEl.style.display = 'none';
 
-      if (!detections || detections.length === 0) {
-        this.clearOverlay();
-        if (this.subjectCountEl) this.subjectCountEl.textContent = '0 IN FOV';
-        if (this.distanceEl) this.distanceEl.textContent = '--';
-        if (this.matchedNameEl) this.matchedNameEl.textContent = 'NO SUBJECT IN FOV';
-        this.updateStatusBadge('NO AUTHORIZED PEOPLE ENROLLED', 'warning', "Click '+ ADD AUTHORIZED PERSON' to register authorized personnel.");
-        if (this.headerStatusEl) {
-          this.headerStatusEl.textContent = 'NO ROSTER';
-          this.headerStatusEl.className = 'snc-status warning';
-        }
-        if (this.liveSubjectsListEl) {
-          this.liveSubjectsListEl.innerHTML = `<div style="color:var(--text-tertiary); font-style:italic;">● Standby: No faces detected in optical feed</div>`;
-        }
-        return;
-      }
-
-      // Faces present, but NO authorized identities enrolled -> ALL faces marked UNAUTHORIZED
       if (this.subjectCountEl) this.subjectCountEl.textContent = `${detections.length} IN FOV`;
       if (this.distanceEl) this.distanceEl.textContent = '--';
-      if (this.matchedNameEl) this.matchedNameEl.textContent = 'UNAUTHORIZED SUBJECTS';
-      this.updateStatusBadge('UNAUTHORIZED', 'critical', `${detections.length} unknown face(s) in sector · No authorized identities enrolled`);
+      if (this.matchedNameEl) {
+        this.matchedNameEl.textContent = 'NO AUTHORIZED ROSTER';
+        this.matchedNameEl.style.color = 'var(--state-warning)';
+      }
+      this.updateStatusBadge('UNAUTHORIZED', 'critical', `${detections.length} unknown face(s) in sector · Zero authorized identities registered`);
       if (this.headerStatusEl) {
-        this.headerStatusEl.textContent = 'UNAUTHORIZED';
-        this.headerStatusEl.className = 'snc-status critical';
+        this.headerStatusEl.textContent = 'NO ROSTER';
+        this.headerStatusEl.className = 'snc-status warning';
       }
 
       const results = detections.map(det => ({
@@ -847,32 +906,10 @@ class FaceAuthenticationEngine {
       return;
     }
 
-    // 2. Roster is non-empty, but no faces detected in camera
-    if (!detections || detections.length === 0) {
-      this.tracks.clear();
-      this.clearOverlay();
-      if (this.challengeBoxEl) this.challengeBoxEl.style.display = 'none';
-      if (this.subjectCountEl) this.subjectCountEl.textContent = '0 IN FOV';
-      if (this.distanceEl) this.distanceEl.textContent = '--';
-      if (this.matchedNameEl) {
-        this.matchedNameEl.textContent = 'STANDBY // SCANNING FOV';
-        this.matchedNameEl.style.color = 'var(--text-secondary)';
-      }
-      this.updateStatusBadge('NO FACE DETECTED', 'neutral', `${this.roster.length} authorized identities active · Awaiting subjects in FOV`);
-      if (this.headerStatusEl) {
-        this.headerStatusEl.textContent = 'READY';
-        this.headerStatusEl.className = 'snc-status verified';
-      }
-      if (this.liveSubjectsListEl) {
-        this.liveSubjectsListEl.innerHTML = `<div style="color:var(--text-tertiary); font-style:italic;">● Standby: No faces detected in optical feed</div>`;
-      }
-      return;
-    }
-
-    // 3. Multi-Face Tracking & Spatial Association
+    // 2. Multi-Face Tracking & Spatial Association
     const trackedSubjects = this.matchDetectionsToTracks(detections);
 
-    // 4. Independent Verification for Every Face Track
+    // 3. Independent Verification for Every Face Track
     let globalMinDist = 999.0;
     let anyUnauthorized = false;
     let anyChallengeActive = false;
@@ -881,33 +918,78 @@ class FaceAuthenticationEngine {
 
     const evaluatedResults = trackedSubjects.map((track) => {
       const det = track.detection;
+      const box = det.detection.box;
+      const score = det.detection.score;
 
-      // Step A: Compare descriptor against every valid enrolled identity
+      // Quality Guard: Reject tiny or low-confidence face detections
+      if (score < 0.65 || box.width < 55 || box.height < 55) {
+        track.state = 'UNKNOWN_PERSON';
+        track.matchedPerson = null;
+        track.matchStreak = 0;
+        allAuthorized = false;
+        anyUnauthorized = true;
+        return {
+          trackId: track.trackId,
+          detection: det,
+          isMatch: false,
+          matchedPerson: null,
+          distance: 999.0,
+          status: 'UNAUTHORIZED',
+          label: 'UNAUTHORIZED · LOW QUALITY FACE',
+          subLabel: `DEGRADED (Score ${(score * 100).toFixed(0)}%, Size ${Math.round(box.width)}x${Math.round(box.height)})`,
+          color: '#ff4141',
+          track: track
+        };
+      }
+
+      // Step A: Compare L2-normalized descriptor against every enrolled identity
       let bestDist = 999.0;
       let secondDist = 999.0;
       let bestPerson = null;
+      let secondPerson = null;
 
       for (const person of this.roster) {
         if (!person.descriptor) continue;
         const d = this.euclideanDistance(det.descriptor, person.descriptor);
         if (d < bestDist) {
           secondDist = bestDist;
+          secondPerson = bestPerson;
           bestDist = d;
           bestPerson = person;
         } else if (d < secondDist) {
           secondDist = d;
+          secondPerson = person;
         }
       }
 
       track.distance = bestDist;
       if (bestDist < globalMinDist) globalMinDist = bestDist;
 
-      // Step B: Ambiguity check
-      const isAmbiguous = (bestPerson !== null && (secondDist - bestDist) < this.ambiguityDelta && bestDist <= this.matchThreshold);
+      // Step B: Ambiguity Check (If top 2 candidates are within margin, deny match)
+      const isAmbiguous = (bestPerson !== null && secondPerson !== null && (secondDist - bestDist) < this.ambiguityDelta && bestDist <= this.matchThreshold);
       track.isAmbiguous = isAmbiguous;
 
-      const isIdentityMatch = (bestDist <= this.matchThreshold && bestPerson !== null && !isAmbiguous);
-      track.matchedPerson = isIdentityMatch ? bestPerson : null;
+      // Step C: Multi-Frame Temporal Consensus (Require 3 consecutive frames matching same identity)
+      if (bestDist <= this.matchThreshold && bestPerson !== null && !isAmbiguous) {
+        if (track.candidateMatch && track.candidateMatch.id === bestPerson.id) {
+          track.matchStreak++;
+        } else {
+          track.candidateMatch = bestPerson;
+          track.matchStreak = 1;
+        }
+      } else {
+        track.candidateMatch = null;
+        track.matchStreak = 0;
+        track.matchedPerson = null;
+      }
+
+      // Identity confirmed only if streak threshold is achieved!
+      const isIdentityConfirmed = (track.matchStreak >= this.requiredStreak && track.candidateMatch !== null);
+      if (isIdentityConfirmed) {
+        track.matchedPerson = track.candidateMatch;
+      } else {
+        track.matchedPerson = null;
+      }
 
       // Extract Facial Landmark Metrics for Liveness & Presentation Attack Detection
       const landmarks = det.landmarks ? det.landmarks.positions : null;
@@ -917,94 +999,103 @@ class FaceAuthenticationEngine {
       // Track temporal planar history
       if (currentMetrics) {
         track.temporalHistory.push(currentMetrics);
-        if (track.temporalHistory.length > 25) track.temporalHistory.shift();
+        if (track.temporalHistory.length > 20) track.temporalHistory.shift();
       }
 
-      // Step C: Evaluate Liveness specifically for this face
-      // CRITICAL: A matching face descriptor alone NEVER grants authorization!
+      // Step D: Evaluate Liveness & Presentation Attack Defense for this face
       let faceStatus = 'UNAUTHORIZED';
       let faceLabel = 'UNAUTHORIZED · UNKNOWN PERSON';
-      let faceSubLabel = `DIST: ${bestDist.toFixed(3)} | NO MATCH`;
+      let faceSubLabel = `DIST: ${bestDist.toFixed(3)} | NO ROSTER MATCH`;
       let faceColor = '#ff4141';
 
       if (isAmbiguous) {
+        track.state = 'UNKNOWN_PERSON';
         faceStatus = 'UNAUTHORIZED';
-        faceLabel = 'UNAUTHORIZED · AMBIGUOUS MATCH';
-        faceSubLabel = `AMBIGUOUS: ${bestDist.toFixed(3)} vs ${secondDist.toFixed(3)}`;
+        faceLabel = 'UNAUTHORIZED · AMBIGUOUS IDENTITY';
+        faceSubLabel = `AMBIGUOUS MATCH (${bestDist.toFixed(3)} vs ${secondDist.toFixed(3)})`;
         faceColor = '#ff4141';
         allAuthorized = false;
         anyUnauthorized = true;
-      } else if (!isIdentityMatch) {
-        // Unknown person -> Immediately UNAUTHORIZED
+      } else if (!isIdentityConfirmed) {
+        // Unknown or still evaluating streak
+        track.state = (bestDist <= this.matchThreshold) ? 'FACE_DETECTED' : 'UNKNOWN_PERSON';
         faceStatus = 'UNAUTHORIZED';
-        faceLabel = 'UNAUTHORIZED · UNKNOWN PERSON';
+        faceLabel = (track.state === 'FACE_DETECTED') ? 'VERIFYING IDENTITY...' : 'UNAUTHORIZED · UNKNOWN PERSON';
         faceSubLabel = `DIST: ${bestDist.toFixed(3)} (THR: ${this.matchThreshold.toFixed(2)})`;
         faceColor = '#ff4141';
         allAuthorized = false;
         anyUnauthorized = true;
       } else {
-        // IDENTITY MATCHED! Now enforce Liveness Verification / Anti-Spoofing
-        const liveness = track.liveness;
+        // IDENTITY CONFIRMED (Candidate: track.matchedPerson.name)
+        // CRITICAL SECURITY RULE: Identity match alone NEVER grants authorization!
+        const matchedPerson = track.matchedPerson;
 
-        if (liveness.state === 'PENDING') {
-          // Initialize active randomized challenge for this specific face track!
+        if (track.livenessState === 'PENDING') {
+          // Transition to IDENTITY_MATCHED and initiate active randomized challenge
+          track.state = 'IDENTITY_MATCHED';
           this.initiateActiveChallenge(track, currentMetrics);
         }
 
-        if (liveness.state === 'CHALLENGE_ACTIVE') {
+        if (track.livenessState === 'CHALLENGE_ACTIVE') {
           anyChallengeActive = true;
           activeChallengeTrack = track;
           allAuthorized = false;
+          track.state = 'LIVENESS_CHECK_REQUIRED';
 
-          const remainingSec = Math.max(0, (liveness.deadline - now) / 1000);
+          const remainingSec = Math.max(0, (track.challengeDeadline - now) / 1000);
 
-          // Check for static photo presentation attack heuristic
+          // Check for static planar photo attack
           const isStaticSpoof = this.checkPlanarRigiditySpoof(track.temporalHistory);
 
-          if (isStaticSpoof && track.totalFramesSeen > 20) {
-            liveness.state = 'FAILED';
-            liveness.failReason = 'Static 2D presentation attack detected (Planar photo replay)';
-            this.recordAuditEvent(bestPerson.name, 'LIVENESS FAILED', liveness.failReason);
+          if (isStaticSpoof && track.totalFramesSeen > 18) {
+            track.livenessState = 'FAILED';
+            track.state = 'LIVENESS_FAILED';
+            track.failReason = 'Static 2D presentation attack detected (Planar photo replay)';
+            this.recordAuditEvent(matchedPerson.name, 'LIVENESS_FAILED', track.failReason);
           } else if (remainingSec <= 0) {
             // Challenge timed out without physical action
-            liveness.state = 'FAILED';
-            liveness.failReason = 'Challenge timeout: No physical response (Presentation attack suspected)';
-            this.recordAuditEvent(bestPerson.name, 'LIVENESS FAILED', liveness.failReason);
+            track.livenessState = 'FAILED';
+            track.state = 'LIVENESS_FAILED';
+            track.failReason = 'Challenge timeout: No physical response (Presentation attack suspected)';
+            this.recordAuditEvent(matchedPerson.name, 'LIVENESS_FAILED', track.failReason);
           } else {
-            // Check whether the live subject completed the active challenge
+            // Check whether live subject fulfilled challenge
             const passed = this.verifyChallengeResponse(track, currentMetrics);
             if (passed) {
-              liveness.state = 'VERIFIED';
-              liveness.passedReason = `Active challenge passed (${liveness.challengePrompt})`;
-              this.recordAuditEvent(bestPerson.name, 'AUTHORIZED', liveness.passedReason);
+              track.livenessState = 'VERIFIED';
+              track.state = 'LIVENESS_VERIFIED';
+              track.passedReason = `Active challenge passed (${track.challengePrompt})`;
+              this.recordAuditEvent(matchedPerson.name, 'LIVENESS_VERIFIED', track.passedReason);
             }
           }
         }
 
-        // Final per-face authorization verdict
-        if (liveness.state === 'VERIFIED') {
+        // Final per-face authorization decision
+        if (track.livenessState === 'VERIFIED') {
+          track.state = 'AUTHORIZED';
           faceStatus = 'AUTHORIZED';
-          faceLabel = `AUTHORIZED · ${bestPerson.name.toUpperCase()}`;
+          faceLabel = `AUTHORIZED · ${matchedPerson.name.toUpperCase()}`;
           faceSubLabel = `MATCH: ${bestDist.toFixed(3)} | LIVENESS: VERIFIED`;
           faceColor = '#42c47a';
-        } else if (liveness.state === 'CHALLENGE_ACTIVE') {
-          const remSec = Math.max(0, (track.liveness.deadline - now) / 1000);
-          faceStatus = 'LIVENESS CHECK REQUIRED';
-          faceLabel = `⚡ ${track.liveness.challengePrompt} (${remSec.toFixed(1)}s)`;
-          faceSubLabel = `MATCH: ${bestPerson.name.toUpperCase()} (AWAITING LIVENESS)`;
+        } else if (track.livenessState === 'CHALLENGE_ACTIVE') {
+          const remSec = Math.max(0, (track.challengeDeadline - now) / 1000);
+          faceStatus = 'LIVENESS_CHECK_REQUIRED';
+          faceLabel = `⚡ ${track.challengePrompt} (${remSec.toFixed(1)}s)`;
+          faceSubLabel = `IDENTITY: ${matchedPerson.name.toUpperCase()} (AWAITING LIVENESS)`;
           faceColor = '#d7a84b';
           allAuthorized = false;
-        } else if (liveness.state === 'FAILED') {
+        } else if (track.livenessState === 'FAILED') {
+          track.state = 'LIVENESS_FAILED';
           faceStatus = 'UNAUTHORIZED';
           faceLabel = 'UNAUTHORIZED · LIVENESS FAILED';
-          faceSubLabel = track.liveness.failReason || 'PRESENTATION ATTACK DETECTED';
+          faceSubLabel = track.failReason || 'PRESENTATION ATTACK DETECTED';
           faceColor = '#ff4141';
           allAuthorized = false;
           anyUnauthorized = true;
         } else {
-          faceStatus = 'LIVENESS UNVERIFIED';
-          faceLabel = 'UNAUTHORIZED · LIVENESS UNVERIFIED';
-          faceSubLabel = 'LIVENESS PENDING';
+          faceStatus = 'LIVENESS_CHECK_REQUIRED';
+          faceLabel = 'IDENTITY MATCHED · AWAITING LIVENESS';
+          faceSubLabel = `IDENTITY: ${matchedPerson.name.toUpperCase()}`;
           faceColor = '#d7a84b';
           allAuthorized = false;
         }
@@ -1013,7 +1104,7 @@ class FaceAuthenticationEngine {
       return {
         trackId: track.trackId,
         detection: det,
-        isMatch: isIdentityMatch,
+        isMatch: isIdentityConfirmed,
         matchedPerson: track.matchedPerson,
         distance: bestDist,
         status: faceStatus,
@@ -1049,28 +1140,28 @@ class FaceAuthenticationEngine {
   }
 
   initiateActiveChallenge(track, initialMetrics) {
-    // Randomly select one of 5 supported active biometric challenges
+    // 5 active biometric challenges with distinct kinematic triggers
     const challengeTypes = [
-      { type: 'TURN_LEFT', prompt: 'TURN HEAD LEFT', hint: 'Please rotate your head clearly to your left.' },
-      { type: 'TURN_RIGHT', prompt: 'TURN HEAD RIGHT', hint: 'Please rotate your head clearly to your right.' },
-      { type: 'TILT_UP', prompt: 'TILT HEAD UP', hint: 'Please tilt your head upward.' },
-      { type: 'BLINK', prompt: 'BLINK BOTH EYES', hint: 'Please blink your eyes naturally.' },
-      { type: 'SMILE', prompt: 'SMILE AT CAMERA', hint: 'Please smile clearly at the camera.' }
+      { type: 'TURN_LEFT', prompt: 'TURN HEAD LEFT', hint: 'Rotate your head clearly to your left.' },
+      { type: 'TURN_RIGHT', prompt: 'TURN HEAD RIGHT', hint: 'Rotate your head clearly to your right.' },
+      { type: 'TILT_UP', prompt: 'TILT HEAD UP', hint: 'Tilt your head upward.' },
+      { type: 'BLINK', prompt: 'BLINK BOTH EYES', hint: 'Blink both eyes naturally.' },
+      { type: 'SMILE', prompt: 'SMILE AT CAMERA', hint: 'Smile clearly at the camera.' }
     ];
 
     const chosen = challengeTypes[Math.floor(Math.random() * challengeTypes.length)];
-    const durationMs = 8500; // 8.5 seconds timeout
+    const durationMs = 7000; // 7.0 seconds challenge window
 
-    track.liveness.state = 'CHALLENGE_ACTIVE';
-    track.liveness.challengeType = chosen.type;
-    track.liveness.challengePrompt = chosen.prompt;
-    track.liveness.challengeHint = chosen.hint;
-    track.liveness.startTime = Date.now();
-    track.liveness.deadline = Date.now() + durationMs;
-    track.liveness.baseline = initialMetrics ? { ...initialMetrics } : null;
-    track.liveness.blinkObservedClosed = false;
+    track.livenessState = 'CHALLENGE_ACTIVE';
+    track.challengeType = chosen.type;
+    track.challengePrompt = chosen.prompt;
+    track.challengeHint = chosen.hint;
+    track.challengeStartTime = Date.now();
+    track.challengeDeadline = Date.now() + durationMs;
+    track.challengeBaseline = initialMetrics ? { ...initialMetrics } : null;
+    track.blinkObservedClosed = false;
 
-    this.recordAuditEvent(track.matchedPerson?.name || 'SUBJECT', 'CHALLENGE ISSUED', `Active PAD Challenge: ${chosen.prompt}`);
+    this.recordAuditEvent(track.matchedPerson?.name || 'SUBJECT', 'LIVENESS_CHALLENGE', `Active Challenge: ${chosen.prompt}`);
   }
 
   computeLandmarkMetrics(landmarks, expressions) {
@@ -1078,13 +1169,13 @@ class FaceAuthenticationEngine {
 
     const p = landmarks;
 
-    // 1. Head Yaw Ratio (Symmetry of nose relative to jaw edges)
+    // 1. Head Yaw Ratio (Horizontal nose position relative to jaw margins)
     const leftDist = Math.max(1, p[30].x - p[0].x);
     const rightDist = Math.max(1, p[16].x - p[30].x);
     const totalW = leftDist + rightDist;
-    const yawRatio = leftDist / totalW; // ~0.50 frontal
+    const yawRatio = leftDist / totalW;
 
-    // 2. Head Pitch Ratio (Nose vertical distance relative to eyes and chin)
+    // 2. Head Pitch Ratio (Nose height relative to eye-center and chin)
     const eyeCenterY = (p[36].y + p[45].y) / 2;
     const chinDist = Math.max(1, p[8].y - eyeCenterY);
     const noseDist = p[30].y - eyeCenterY;
@@ -1102,7 +1193,7 @@ class FaceAuthenticationEngine {
     const earR = (d43_47 + d44_46) / (2 * d42_45);
     const ear = (earL + earR) / 2;
 
-    // 4. Smile Ratio (Mouth width relative to outer eye distance)
+    // 4. Smile Ratio (Mouth width relative to inter-ocular distance)
     const mouthW = Math.hypot(p[48].x - p[54].x, p[48].y - p[54].y);
     const eyeDist = Math.max(1, Math.hypot(p[36].x - p[45].x, p[36].y - p[45].y));
     const smileRatio = mouthW / eyeDist;
@@ -1112,32 +1203,28 @@ class FaceAuthenticationEngine {
   }
 
   verifyChallengeResponse(track, metrics) {
-    if (!metrics || !track.liveness.baseline) return false;
-    const b = track.liveness.baseline;
-    const cType = track.liveness.challengeType;
+    if (!metrics || !track.challengeBaseline) return false;
+    const b = track.challengeBaseline;
+    const cType = track.challengeType;
 
     if (cType === 'TURN_LEFT' || cType === 'TURN_RIGHT') {
-      // Rotational yaw shift of at least 0.10 from baseline
       const yawDelta = metrics.yawRatio - b.yawRatio;
       if (Math.abs(yawDelta) >= 0.10) {
         return true;
       }
     } else if (cType === 'TILT_UP') {
-      // Nose moves up towards eye line by at least 0.08
       const pitchDelta = b.pitchRatio - metrics.pitchRatio;
       if (pitchDelta >= 0.08 || Math.abs(metrics.pitchRatio - b.pitchRatio) >= 0.09) {
         return true;
       }
     } else if (cType === 'BLINK') {
-      // Complete blink cycle: eyes drop below 0.18 (closed) then recover above 0.22 (opened)
       if (metrics.ear < 0.185) {
-        track.liveness.blinkObservedClosed = true;
+        track.blinkObservedClosed = true;
       }
-      if (track.liveness.blinkObservedClosed && metrics.ear >= 0.225) {
+      if (track.blinkObservedClosed && metrics.ear >= 0.225) {
         return true;
       }
     } else if (cType === 'SMILE') {
-      // Mouth width increases by >= 14% or happy expression triggered
       const smileGain = metrics.smileRatio - b.smileRatio;
       if (smileGain >= 0.08 || metrics.smileRatio >= 0.58 || metrics.happyScore >= 0.55) {
         return true;
@@ -1148,9 +1235,8 @@ class FaceAuthenticationEngine {
   }
 
   checkPlanarRigiditySpoof(history) {
-    if (!history || history.length < 18) return false;
+    if (!history || history.length < 16) return false;
 
-    // Calculate variance of EAR and smile ratios
     let earSum = 0;
     let smileSum = 0;
     const n = history.length;
@@ -1171,7 +1257,7 @@ class FaceAuthenticationEngine {
     earVar = earVar / n;
     smileVar = smileVar / n;
 
-    // An entirely motionless 2D photo has almost zero non-rigid variance
+    // A static printed photo or motionless phone screen exhibits planar rigidity (variance near zero)
     return (earVar < 0.00003 && smileVar < 0.00003);
   }
 
@@ -1179,26 +1265,31 @@ class FaceAuthenticationEngine {
     if (!this.challengeBoxEl) return;
     this.challengeBoxEl.style.display = 'block';
 
-    const remSec = Math.max(0, (track.liveness.deadline - now) / 1000);
-    const progressPct = Math.max(0, Math.min(100, (remSec / 8.5) * 100));
+    const remSec = Math.max(0, (track.challengeDeadline - now) / 1000);
+    const progressPct = Math.max(0, Math.min(100, (remSec / 7.0) * 100));
 
     if (this.challengeDirectiveEl) {
-      this.challengeDirectiveEl.textContent = `⚡ LIVENESS CHALLENGE: ${track.liveness.challengePrompt}`;
+      this.challengeDirectiveEl.textContent = `⚡ LIVENESS CHALLENGE: ${track.challengePrompt}`;
     }
     if (this.challengeTimerEl) {
       this.challengeTimerEl.textContent = `${remSec.toFixed(1)}s`;
     }
     if (this.challengeProgressBarEl) {
       this.challengeProgressBarEl.style.width = `${progressPct}%`;
-      this.challengeProgressBarEl.style.background = remSec < 2.5 ? 'var(--state-critical)' : 'var(--state-warning)';
+      this.challengeProgressBarEl.style.background = remSec < 2.2 ? 'var(--state-critical)' : 'var(--state-warning)';
     }
-    if (this.challengeHintEl && track.liveness.challengeHint) {
-      this.challengeHintEl.textContent = `${track.liveness.challengeHint} Proves physical presence (blocks photo/phone replay attacks).`;
+    if (this.challengeHintEl && track.challengeHint) {
+      this.challengeHintEl.textContent = `${track.challengeHint} Verifies physical presence against presentation attack.`;
     }
   }
 
   updateCollectiveHeroState(results, allAuthorized, anyUnauthorized, anyChallengeActive, activeChallengeTrack) {
     if (!this.heroBoxEl || !this.statusBadgeEl) return;
+
+    if (results.length === 0) {
+      this.handleNoFacesDetected();
+      return;
+    }
 
     if (anyUnauthorized) {
       this.updateStatusBadge('UNAUTHORIZED', 'critical', 'One or more subjects in optical sector are unauthorized or failed liveness');
@@ -1212,7 +1303,7 @@ class FaceAuthenticationEngine {
         this.matchedNameEl.style.color = 'var(--state-critical)';
       }
     } else if (anyChallengeActive && activeChallengeTrack) {
-      this.updateStatusBadge('LIVENESS CHECK REQUIRED', 'warning', `Active verification challenge underway for ${activeChallengeTrack.matchedPerson?.name || 'subject'}`);
+      this.updateStatusBadge('LIVENESS_CHECK_REQUIRED', 'warning', `Active verification challenge underway for ${activeChallengeTrack.matchedPerson?.name || 'subject'}`);
       if (this.headerStatusEl) {
         this.headerStatusEl.textContent = 'CHALLENGE';
         this.headerStatusEl.className = 'snc-status warning';
@@ -1249,7 +1340,7 @@ class FaceAuthenticationEngine {
 
       const color = subj.color;
       row.innerHTML = `
-        <div style="display:flex; flex-direction:column; overflow:hidden; max-width:190px;">
+        <div style="display:flex; flex-direction:column; overflow:hidden; max-width:200px;">
           <span style="color:${color}; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">#${idx + 1} ${subj.label}</span>
           <span style="color:var(--text-tertiary); font-size:7.5px;">${subj.subLabel}</span>
         </div>
@@ -1275,9 +1366,10 @@ class FaceAuthenticationEngine {
         row.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
 
         let col = 'var(--text-secondary)';
-        if (item.verdict === 'AUTHORIZED') col = 'var(--state-verified)';
-        else if (item.verdict === 'LIVENESS FAILED' || item.verdict === 'UNAUTHORIZED') col = 'var(--state-critical)';
-        else if (item.verdict === 'CHALLENGE ISSUED' || item.verdict === 'RESET') col = 'var(--state-warning)';
+        if (item.verdict === 'AUTHORIZED' || item.verdict === 'LIVENESS_VERIFIED') col = 'var(--state-verified)';
+        else if (item.verdict === 'LIVENESS_FAILED' || item.verdict === 'UNAUTHORIZED' || item.verdict === 'REVOKED') col = 'var(--state-critical)';
+        else if (item.verdict === 'LIVENESS_CHALLENGE' || item.verdict === 'RESET') col = 'var(--state-warning)';
+        else if (item.verdict === 'IDENTITY_MATCHED') col = 'var(--radar-cyan)';
 
         row.innerHTML = `
           <span><span style="color:var(--text-tertiary);">${item.timeStr}</span> <strong style="color:${col};">${item.subject}</strong>: ${item.reason}</span>
@@ -1303,7 +1395,6 @@ class FaceAuthenticationEngine {
     ctx.clearRect(0, 0, w, h);
     if (!subjects || subjects.length === 0) return;
 
-    // Coordinate mapping: video stretches across w & h of canvas
     const scaleX = w / video.videoWidth;
     const scaleY = h / video.videoHeight;
 
@@ -1325,7 +1416,7 @@ class FaceAuthenticationEngine {
       // Subtle translucent interior fill
       if (subj.status === 'AUTHORIZED') {
         ctx.fillStyle = 'rgba(66, 196, 122, 0.10)';
-      } else if (subj.status === 'LIVENESS CHECK REQUIRED') {
+      } else if (subj.status === 'LIVENESS_CHECK_REQUIRED' || subj.status === 'IDENTITY_MATCHED') {
         ctx.fillStyle = 'rgba(215, 168, 75, 0.10)';
       } else {
         ctx.fillStyle = 'rgba(255, 65, 65, 0.12)';
@@ -1380,6 +1471,8 @@ class FaceAuthenticationEngine {
         this.statusBadgeEl.style.color = 'var(--state-critical)';
       } else if (stateType === 'warning') {
         this.statusBadgeEl.style.color = 'var(--state-warning)';
+      } else if (stateType === 'matched') {
+        this.statusBadgeEl.style.color = 'var(--radar-cyan)';
       } else {
         this.statusBadgeEl.style.color = 'var(--text-secondary)';
       }
@@ -1393,6 +1486,8 @@ class FaceAuthenticationEngine {
         this.heroBoxEl.classList.add('state-unauthorized');
       } else if (stateType === 'warning') {
         this.heroBoxEl.classList.add('state-challenge');
+      } else if (stateType === 'matched') {
+        this.heroBoxEl.classList.add('state-matched');
       } else {
         this.heroBoxEl.classList.add('state-neutral');
       }

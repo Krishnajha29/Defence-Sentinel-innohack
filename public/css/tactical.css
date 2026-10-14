@@ -612,11 +612,25 @@ body {
    ========================================================================== */
 .camera-page-layout {
   display: grid;
-  grid-template-columns: 68% 32%;
+  grid-template-columns: minmax(0, 1fr) 360px;
   height: 100%;
   width: 100%;
   background: var(--bg-deep);
   overflow: hidden;
+}
+
+@media (max-width: 1280px) {
+  .camera-page-layout {
+    grid-template-columns: minmax(0, 1fr) 330px;
+  }
+}
+
+@media (max-width: 900px) {
+  .camera-page-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    overflow-y: auto;
+  }
 }
 
 .cam-primary-col {
@@ -624,6 +638,7 @@ body {
   flex-direction: column;
   border-right: 1px solid var(--border-default);
   overflow: hidden;
+  min-width: 0;
 }
 
 .cam-sector-tabs-bar {
@@ -682,7 +697,24 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
+  height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.cam-side-col::-webkit-scrollbar {
+  width: 5px;
+}
+.cam-side-col::-webkit-scrollbar-track {
+  background: #03060a;
+}
+.cam-side-col::-webkit-scrollbar-thumb {
+  background: rgba(24, 184, 214, 0.3);
+  border-radius: 2px;
+}
+.cam-side-col::-webkit-scrollbar-thumb:hover {
+  background: rgba(24, 184, 214, 0.65);
 }
 
 .face-auth-card {
@@ -708,6 +740,12 @@ body {
   border-color: rgba(255, 65, 65, 0.5);
   background: linear-gradient(180deg, rgba(255, 65, 65, 0.14) 0%, rgba(14, 4, 4, 0.95) 100%);
   box-shadow: 0 0 18px rgba(255, 65, 65, 0.15);
+}
+
+.face-auth-hero-box.state-matched {
+  border-color: rgba(24, 184, 214, 0.55);
+  background: linear-gradient(180deg, rgba(24, 184, 214, 0.14) 0%, rgba(3, 10, 15, 0.95) 100%);
+  box-shadow: 0 0 18px rgba(24, 184, 214, 0.2);
 }
 
 .face-auth-hero-box.state-challenge {
@@ -780,9 +818,10 @@ body {
 
 
 .cam-detection-list {
-  flex: 1;
+  max-height: 90px;
+  flex-shrink: 0;
   overflow-y: auto;
-  padding: 8px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
